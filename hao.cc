@@ -80,6 +80,8 @@ namespace Global_Physical_Variables
     }
     // load[0] = Scale*Gamma_dot*(x[1]-0.5*N[1]*N[1]*x[1]);
     // load[1] = Scale*Gamma_dot*0.5*N[0]*N[1]*x[1];
+    // load[0] = 1.0e-7;
+    // load[1] = 1.0e-7;
   }
 
 } // namespace Global_Physical_Variables
@@ -269,7 +271,7 @@ public:
                   Global_Physical_Variables::Gamma_dot * 0.5 * N[0] * N[1] *
                   posn[1];
 
-    // traction[0] = 1.0e-6;
+    // traction[0] = 1.0e-7;
     // traction[1] = 1.0e-7;
   }
 
@@ -1008,17 +1010,22 @@ void ElasticBeamProblem::parameter_study()
     // (for string under tension)
     trace << Global_Physical_Variables::P_ext << " " << abs(Doc_node_pt->x(1))
           << " " << exact_pressure << std::endl;
+
+    // Output file stream used for writing results
+    ofstream file2;
+
+    // String used for the filename
+    char filename2[100];
+
+    // Open the file and give it a name
+    sprintf(filename2, "RESLT/sum_drag_and_torque%d.dat", i);
+    file2.open(filename2);
+
+    // Document the sum of drag and torque on the entire beam structure
+    Hao_element_pt->output(file2);
+    file2.close();
   }
 
-  // Output file stream used for writing results
-  ofstream file2;
-
-  // Open the file and give it a name
-  file2.open("RESLT/sum_drag_and_torque.dat");
-
-  // Document the sum of drag and torque on the entire beam structure
-  Hao_element_pt->output(file2);
-  file2.close();
 
 } // end of parameter study
 
