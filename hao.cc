@@ -54,19 +54,20 @@ namespace Global_Physical_Variables
   double Gamma_dot = 0.0;
 
   /// Initial drift speed and accerlation of horiztontal motion
-  double V = 0.0;
+  double V = 1.0;
 
   /// Initial speed of horiztontal motion
-  double U0 = 0.0;
+  double U0 = 2.0;
 
   /// Initial Beam's orientation
-  double Theta_eq = -0.3;
+  double Theta_eq = acos(-1) / 2.0;
+  // double Theta_eq = 0.0;
 
   /// Initial x position of clamped point
-  double X0 = 0.8;
+  double X0 = 4.0;
 
   /// Initial y position of clamped point
-  double Y0 = 0.5;
+  double Y0 = 5.0;
 
   /// Load function: Apply a constant external pressure to the beam
   void load(const Vector<double>& xi,
@@ -158,10 +159,14 @@ public:
     Beam_mesh_pt = mesh_pt;
   }
 
+  /// Compute the sum of the elements' contribution to the (\int r ds) and the
+  /// length of beam Le, then assemble them to get the beam's position of centre
+  /// of mass
+  void compute_centre_of_mass(Vector<double>& r_centre);
 
-  /// hierher implement this: Compute the sum of the elements' contribution
-  /// to the drag and torque on the entire beam structure according to
-  /// slender body theory
+
+  /// Compute the sum of the elements' contribution to the drag and torque on
+  /// the entire beam structure according to slender body theory
   void compute_drag_and_torque(Vector<double>& sum_drag, double& sum_torque);
   //{
   //  HIERHER DO THIS LOOP OVER ELEMENTS; THIS NEEDS THE POINTER
@@ -172,10 +177,12 @@ public:
   void output(std::ostream& outfile)
   {
     Vector<double> sum_drag(2);
-    double sum_torque = 0;
+    double sum_torque = 0.0;
 
     // Compute the sum of drag and torque on the entire beam structure
     compute_drag_and_torque(sum_drag, sum_torque);
+
+    oomph_info << "output" << sum_torque << std::endl;
 
     // Output the sum of drag and torque
     outfile << sum_drag[0] << "  ";
@@ -201,7 +208,7 @@ class HaoHermiteBeamElement : public virtual HermiteBeamElement
 {
 public:
   /// Pass pointer to HaoElement that contains the rigid body parameters
-  void set_hao_element_hierher_rename_me(HaoElement* hao_element_pt)
+  void set_pointer_to_hao_element(HaoElement* hao_element_pt)
   {
     // Store the pointer for future reference
     Hao_element_pt = hao_element_pt;
@@ -240,6 +247,63 @@ public:
   }
 
 
+  /// Compute the element's contribution to the (\int r ds) and length of beam
+  /// Le
+  void compute_local_int_r_and_Le(Vector<double>& int_r, double& Le)
+  {
+#ifdef PARANOID
+    if (int_r.size() != 2)
+    {
+      std::ostringstream error_message;
+      error_message << "int_r should have size 2, not " << int_r.size()
+                    << std::endl;
+
+      throw OomphLibError(
+        error_message.str(), OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
+    }
+#endif
+
+    // Initialise
+    int_r[0] = 0.0;
+    int_r[1] = 0.0;
+    Le = 0.0;
+
+    // Local coordinate (1D!)
+    Vector<double> s(1);
+
+    // Set # of integration points
+    const unsigned n_intpt = integral_pt()->nweight();
+
+    // Loop over the integration points
+    for (unsigned ipt = 0; ipt < n_intpt; ipt++)
+    {
+      // Get the integral weight
+      double w = integral_pt()->weight(ipt);
+
+      // Return local coordinate s[j]  of i-th integration point.
+      unsigned j = 0;
+      s[j] = integral_pt()->knot(ipt, j);
+
+      // Get position vector to and non-unit tangent vector on wall:
+      // dr/ds
+      Vector<double> posn(2);
+      Vector<double> drds(2);
+      get_non_unit_tangent(s, posn, drds);
+
+      // Jacobian
+      double J = sqrt(drds[0] * drds[0] + drds[1] * drds[1]);
+
+      // Premultiply the weights and the Jacobian
+      double W = w * J;
+
+      // Add 'em
+      Le += W;
+      int_r[0] += posn[0] * W;
+      int_r[1] += posn[1] * W;
+    }
+  }
+
+
   /// Compute the local traction vector acting on the element
   /// at the local coordinate s according to slender body theory
   void compute_local_slender_body_traction(const Vector<double>& s,
@@ -263,21 +327,42 @@ public:
     get_normal(s, posn, N);
 
     // hierher don't refer to namespace directly (but fine for now...)
-    traction[0] = Global_Physical_Variables::Scale *
-                  Global_Physical_Variables::Gamma_dot *
-                  (posn[1] - 0.5 * N[1] * N[1] * posn[1]);
+    // traction[0] = Global_Physical_Variables::Scale *
+    //              Global_Physical_Variables::Gamma_dot *
+    //              (posn[1] - 0.5 * N[1] * N[1] * posn[1]);
 
-    traction[1] = Global_Physical_Variables::Scale *
-                  Global_Physical_Variables::Gamma_dot * 0.5 * N[0] * N[1] *
-                  posn[1];
+    // traction[1] = Global_Physical_Variables::Scale *
+    //               Global_Physical_Variables::Gamma_dot * 0.5 * N[0] * N[1] *
+    //               posn[1];
 
-    // traction[0] = 1.0e-7;
-    // traction[1] = 1.0e-7;
+    // Translate parameters into meaningful variables do this elsewhere too
+    double V = 0.0;
+    double U0 = 0.0;
+    double Theta_eq = 0.0;
+    double X0 = 0.0;
+    double Y0 = 0.0;
+    Hao_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+
+    double t = 0.0;
+
+    // Compute the traction onto the element at local coordinate s
+    traction[0] =
+      Global_Physical_Variables::Scale *
+      ((1 - 0.5 * N[1] * N[1]) *
+         (Global_Physical_Variables::Gamma_dot * posn[1] - V * t - U0) -
+       0.5 * V * N[0] * N[1]);
+
+    traction[1] =
+      Global_Physical_Variables::Scale *
+      (0.5 * N[0] * N[1] *
+         (Global_Physical_Variables::Gamma_dot * posn[1] - V * t - U0) -
+       V + 0.5 * V * N[0] * N[0]);
   }
 
 
   /// Compute the element's contribution to the drag and torque on
   /// the entire beam structure according to slender body theory
+  // pass in precomputed centre of mass from HaoElement!
   void compute_integrated_drag_and_torque(Vector<double>& drag, double& torque)
   {
 // hierher paranoid check size of drag vector!
@@ -298,6 +383,16 @@ public:
     drag[1] = 0.0;
     torque = 0.0;
 
+    // This is one of the terms to calculate the contribution to torque
+    // (term1=\int traction cross product r)
+    // double term1 = 0.0;
+
+    // Length of the beam within this element
+    // double L = 0.0;
+
+    // Integration of r along s
+    // Vector<double> int_r(2);
+
     // Local coordinate (1D!)
     Vector<double> s(1);
 
@@ -315,8 +410,8 @@ public:
       s[j] = integral_pt()->knot(ipt, j);
 
 
-      /// Get position vector to and non-unit tangent vector on wall:
-      /// dr/ds
+      // Get position vector to and non-unit tangent vector on wall:
+      // dr/ds
       Vector<double> posn(2);
       Vector<double> drds(2);
       get_non_unit_tangent(s, posn, drds);
@@ -327,28 +422,57 @@ public:
       // Premultiply the weights and the Jacobian
       double W = w * J;
 
-      // Compute the slender body traction
+      // Compute the slender body traction; note this is inefficient since
+      // we've already computed certain quantities that will be needed in
+      // this function
       Vector<double> traction(2);
       compute_slender_body_traction(s, traction);
 
-      // Translate parameters into meaningful variables do this elsewhere too
-      double V = 0.0;
-      double U0 = 0.0;
-      double Theta_eq = 0.0;
-      double X0 = 0.0;
-      double Y0 = 0.0;
-      Hao_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+      // Compute the beam's positon of centre of mass
+      Vector<double> r_centre(2);
+      Hao_element_pt->compute_centre_of_mass(r_centre);
 
       // calculate the contribution to torque
       double local_torque = 0.0;
-      local_torque =
-        (posn[0] - X0) * traction[1] - (posn[1] - Y0) * traction[0];
+      local_torque = (posn[0] - r_centre[0]) * traction[1] -
+                     (posn[1] - r_centre[1]) * traction[0];
+
+      oomph_info << traction[0] << std::endl;
+      oomph_info << traction[1] << std::endl;
+      oomph_info << local_torque << std::endl;
+      // Translate parameters into meaningful variables do this elsewhere too
+      // double V = 0.0;
+      // double U0 = 0.0;
+      // double Theta_eq = 0.0;
+      // double X0 = 0.0;
+      // double Y0 = 0.0;
+      // Hao_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+
+      // Compute the local_term1 to term1
+      // double local_term1 = 0.0;
+      // local_term1 = posn[0] * traction[1] - posn[1] * traction[0];
+
 
       // Add 'em
       drag[0] += traction[0] * W;
       drag[1] += traction[1] * W;
       torque += local_torque * W;
+      // term1 += local_term1 * W;
+      // L += W;
+      // int_r[0] += posn[0] * W;
+      // int_r[1] += posn[1] * W;
     }
+
+    // oomph_info << torque << std::endl;
+    //  Get part of the beam's centre of mass within this element
+    //  Vector<double> r_cen(2);
+    //  r_cen[0] = (1.0 / L) * int_r[0];
+    //  r_cen[1] = (1.0 / L) * int_r[1];
+
+    // Compute the element's contribution to torque
+    // torque = term1 - (r_cen[0] * drag[1] - r_cen[1] * drag[0]);
+    // oomph_info << r_cen[1] << std::endl;
+    // oomph_info << torque << std::endl;
   }
 
 
@@ -486,8 +610,61 @@ private:
 
 
 //=============================================================================
-/// Compute the sum of the elements' contribution to the drag and torque on the
-/// entire beam structure according to slender body theory
+/// Compute the sum of the elements' contribution to the (\int r ds) and the
+/// length of beam Le, then assemble them to get the beam's position of centre
+/// of mass
+//=============================================================================
+void HaoElement::compute_centre_of_mass(Vector<double>& r_centre)
+{
+#ifdef PARANOID
+  if (r_centre.size() != 2)
+  {
+    std::ostringstream error_message;
+    error_message << "r_centre should have size 2, not " << r_centre.size()
+                  << std::endl;
+
+    throw OomphLibError(
+      error_message.str(), OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
+  }
+#endif
+
+  // Find number of elements in the mesh
+  unsigned n_element = Beam_mesh_pt->nelement();
+
+  Vector<double> int_r(2);
+  double Le = 0.0;
+  Vector<double> sum_int_r(2);
+  double L = 0.0;
+
+  // Loop over the elements to compute the sum of elements' contribution to
+  // the (\int r ds) and the length of beam Le
+  for (unsigned e = 0; e < n_element; e++)
+  {
+    // Upcast to the specific element type
+    HaoHermiteBeamElement* elem_pt =
+      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
+
+    // Compute contribution to the the (\int r ds) and the length of beam Le
+    // within the e-th element
+    elem_pt->compute_local_int_r_and_Le(int_r, Le);
+
+    // Sum the elements' contribution to the (\int r ds) and the length of beam
+    // Le
+    sum_int_r[0] += int_r[0];
+    sum_int_r[1] += int_r[1];
+    L += Le;
+  } // end of loop over elements
+
+  // assemble the (\int r ds) and the beam length L to get the position of
+  // centre of mass
+  r_centre[0] = (1.0 / L) * sum_int_r[0];
+  r_centre[1] = (1.0 / L) * sum_int_r[1];
+}
+
+
+//=============================================================================
+/// Compute the sum of the elements' contribution to the drag and torque on
+/// the entire beam structure according to slender body theory
 //=============================================================================
 void HaoElement::compute_drag_and_torque(Vector<double>& sum_drag,
                                          double& sum_torque)
@@ -508,10 +685,10 @@ void HaoElement::compute_drag_and_torque(Vector<double>& sum_drag,
   unsigned n_element = Beam_mesh_pt->nelement();
 
   Vector<double> drag(2);
-  double torque = 0;
+  double torque = 0.0;
 
-  // Loop over the elements to compute the sum of elements' contribution to the
-  // drag and torque on the entire beam structure
+  // Loop over the elements to compute the sum of elements' contribution to
+  // the drag and torque on the entire beam structure
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
@@ -526,6 +703,7 @@ void HaoElement::compute_drag_and_torque(Vector<double>& sum_drag,
     sum_drag[1] += drag[1];
     sum_torque += torque;
   } // end of loop over elements
+  oomph_info << "sum_torque" << sum_torque << std::endl;
 }
 
 
@@ -894,7 +1072,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
       dynamic_cast<HaoHermiteBeamElement*>(mesh_pt()->element_pt(e));
 
     // Pass the pointer of HaoElement to the each element
-    elem_pt->set_hao_element_hierher_rename_me(Hao_element_pt);
+    elem_pt->set_pointer_to_hao_element(Hao_element_pt);
 
     // Set physical parameters for each element:
     elem_pt->sigma0_pt() = &Global_Physical_Variables::Sigma0;
@@ -907,10 +1085,9 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
   } // end of loop over elements
 
-  // Choose node at which displacement is documented (halfway along -- provided
-  // we have an odd number of nodes; complain if this is not the
-  // case because the comparison with the exact solution will be wrong
-  // otherwise!)
+  // Choose node at which displacement is documented (halfway along --
+  // provided we have an odd number of nodes; complain if this is not the case
+  // because the comparison with the exact solution will be wrong otherwise!)
   unsigned n_nod = mesh_pt()->nnode();
   if (n_nod % 2 != 1)
   {
@@ -935,7 +1112,7 @@ void ElasticBeamProblem::parameter_study()
 
   // Set the increments in control parameters
   // double pext_increment = 0.001;
-  double pext_increment = 1.0e-6;
+  double pext_increment = 0.0;
 
   // Set initial values for control parameters
   Global_Physical_Variables::P_ext = 0.0 - pext_increment;
@@ -968,7 +1145,7 @@ void ElasticBeamProblem::parameter_study()
   {
     // Increment pressure
     Global_Physical_Variables::P_ext += pext_increment;
-    Global_Physical_Variables::Gamma_dot = (1.0e-2) * i;
+    Global_Physical_Variables::Gamma_dot = (1.0) * i;
 
     // Solve the system
     newton_solve();
@@ -1040,7 +1217,7 @@ int main()
 
   // Set the 2nd Piola Kirchhoff prestress
   // Global_Physical_Variables::Sigma0=0.1;
-  Global_Physical_Variables::Sigma0 = 0.1;
+  Global_Physical_Variables::Sigma0 = 0.0;
 
   // Set the length of domain
   double L = 10.0;
