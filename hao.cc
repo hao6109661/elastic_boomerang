@@ -23,7 +23,7 @@
 // LIC// The authors may be contacted at oomph-lib@maths.man.ac.uk.
 // LIC//
 // LIC//====================================================================
-// Driver function for a simple beam proble
+// Driver function for a simple beam problem
 
 // OOMPH-LIB includes
 #include "generic.h"
