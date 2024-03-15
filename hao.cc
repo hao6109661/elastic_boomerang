@@ -54,20 +54,19 @@ namespace Global_Physical_Variables
   double Gamma_dot = 0.0;
 
   /// Initial drift speed and accerlation of horiztontal motion
-  double V = 1.0;
+  double V = 3.0;
 
   /// Initial speed of horiztontal motion
-  double U0 = 2.0;
+  double U0 = 4.0;
 
   /// Initial Beam's orientation
-  double Theta_eq = acos(-1) / 2.0;
-  // double Theta_eq = 0.0;
+  double Theta_eq = 0.0;
 
   /// Initial x position of clamped point
-  double X0 = 4.0;
+  double X0 = 5.0;
 
   /// Initial y position of clamped point
-  double Y0 = 5.0;
+  double Y0 = 6.0;
 
   /// Load function: Apply a constant external pressure to the beam
   void load(const Vector<double>& xi,
@@ -182,9 +181,8 @@ public:
     // Compute the sum of drag and torque on the entire beam structure
     compute_drag_and_torque(sum_drag, sum_torque);
 
-    oomph_info << "output" << sum_torque << std::endl;
-
     // Output the sum of drag and torque
+    outfile << Global_Physical_Variables::Theta_eq << "  ";
     outfile << sum_drag[0] << "  ";
     outfile << sum_drag[1] << "  ";
     outfile << sum_torque << std::endl;
@@ -347,16 +345,10 @@ public:
 
     // Compute the traction onto the element at local coordinate s
     traction[0] =
-      Global_Physical_Variables::Scale *
-      ((1 - 0.5 * N[1] * N[1]) *
-         (Global_Physical_Variables::Gamma_dot * posn[1] - V * t - U0) -
-       0.5 * V * N[0] * N[1]);
+     (1.0 - 0.5 * N[1] * N[1]) * (posn[1] - V * t - U0) - 0.5 * V * N[0] * N[1];
 
     traction[1] =
-      Global_Physical_Variables::Scale *
-      (0.5 * N[0] * N[1] *
-         (Global_Physical_Variables::Gamma_dot * posn[1] - V * t - U0) -
-       V + 0.5 * V * N[0] * N[0]);
+      0.5 * N[0] * N[1] * (posn[1] - V * t - U0) - V + 0.5 * V * N[0] * N[0];
   }
 
 
@@ -382,16 +374,6 @@ public:
     drag[0] = 0.0;
     drag[1] = 0.0;
     torque = 0.0;
-
-    // This is one of the terms to calculate the contribution to torque
-    // (term1=\int traction cross product r)
-    // double term1 = 0.0;
-
-    // Length of the beam within this element
-    // double L = 0.0;
-
-    // Integration of r along s
-    // Vector<double> int_r(2);
 
     // Local coordinate (1D!)
     Vector<double> s(1);
@@ -437,42 +419,11 @@ public:
       local_torque = (posn[0] - r_centre[0]) * traction[1] -
                      (posn[1] - r_centre[1]) * traction[0];
 
-      oomph_info << traction[0] << std::endl;
-      oomph_info << traction[1] << std::endl;
-      oomph_info << local_torque << std::endl;
-      // Translate parameters into meaningful variables do this elsewhere too
-      // double V = 0.0;
-      // double U0 = 0.0;
-      // double Theta_eq = 0.0;
-      // double X0 = 0.0;
-      // double Y0 = 0.0;
-      // Hao_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-
-      // Compute the local_term1 to term1
-      // double local_term1 = 0.0;
-      // local_term1 = posn[0] * traction[1] - posn[1] * traction[0];
-
-
       // Add 'em
       drag[0] += traction[0] * W;
       drag[1] += traction[1] * W;
       torque += local_torque * W;
-      // term1 += local_term1 * W;
-      // L += W;
-      // int_r[0] += posn[0] * W;
-      // int_r[1] += posn[1] * W;
     }
-
-    // oomph_info << torque << std::endl;
-    //  Get part of the beam's centre of mass within this element
-    //  Vector<double> r_cen(2);
-    //  r_cen[0] = (1.0 / L) * int_r[0];
-    //  r_cen[1] = (1.0 / L) * int_r[1];
-
-    // Compute the element's contribution to torque
-    // torque = term1 - (r_cen[0] * drag[1] - r_cen[1] * drag[0]);
-    // oomph_info << r_cen[1] << std::endl;
-    // oomph_info << torque << std::endl;
   }
 
 
@@ -644,19 +595,18 @@ void HaoElement::compute_centre_of_mass(Vector<double>& r_centre)
     HaoHermiteBeamElement* elem_pt =
       dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
 
-    // Compute contribution to the the (\int r ds) and the length of beam Le
-    // within the e-th element
+    // Compute contribution to the the (\int r ds) and length of beam Le within
+    // the e-th element
     elem_pt->compute_local_int_r_and_Le(int_r, Le);
 
-    // Sum the elements' contribution to the (\int r ds) and the length of beam
-    // Le
+    // Sum the elements' contribution to the (\int r ds) and length of beam Le
     sum_int_r[0] += int_r[0];
     sum_int_r[1] += int_r[1];
     L += Le;
   } // end of loop over elements
 
-  // assemble the (\int r ds) and the beam length L to get the position of
-  // centre of mass
+  // assemble the (\int r ds) and beam length L to get the position of centre of
+  // mass
   r_centre[0] = (1.0 / L) * sum_int_r[0];
   r_centre[1] = (1.0 / L) * sum_int_r[1];
 }
@@ -703,7 +653,6 @@ void HaoElement::compute_drag_and_torque(Vector<double>& sum_drag,
     sum_drag[1] += drag[1];
     sum_torque += torque;
   } // end of loop over elements
-  oomph_info << "sum_torque" << sum_torque << std::endl;
 }
 
 
@@ -718,7 +667,7 @@ public:
   ElasticBeamProblem(const unsigned& n_elem, const double& length);
 
   /// Conduct a parameter study
-  void parameter_study();
+  void parameter_study(std::ostream& outfile);
 
   /// Return pointer to the mesh
   OneDLagrangianMesh<HaoHermiteBeamElement>* mesh_pt()
@@ -767,16 +716,19 @@ public:
   StraightLineVertical(HaoElement* hao_element_pt)
     : GeomObject(1, 2), Hao_element_pt(hao_element_pt)
   {
+     
     // Pass the rigid body parameters to this class
     Vector<Data*> rigid_body_data_pt = Hao_element_pt->rigid_body_parameters();
 
+
+     
 #ifdef PARANOID
     if (rigid_body_data_pt.size() != 5)
     {
       std::ostringstream error_message;
       error_message << "rigid_body_data_pt should have size 5, not "
                     << rigid_body_data_pt.size() << std::endl;
-
+ 
       // hierher loop over all entries
       for (unsigned i = 0; i < 5; i++)
       {
@@ -1105,7 +1057,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
 //=======start_of_parameter_study==========================================
 /// Solver loop to perform parameter study
 //=========================================================================
-void ElasticBeamProblem::parameter_study()
+void ElasticBeamProblem::parameter_study(std::ostream& outfile)
 {
   // Over-ride the default maximum value for the residuals
   Problem::Max_residuals = 1.0e10;
@@ -1117,8 +1069,8 @@ void ElasticBeamProblem::parameter_study()
   // Set initial values for control parameters
   Global_Physical_Variables::P_ext = 0.0 - pext_increment;
 
-  Global_Physical_Variables::Scale = 1.0e-4;
-  // Global_Physical_Variables::Scale = 0.0;
+  // Global_Physical_Variables::Scale = 1.0e-4;
+  //  Global_Physical_Variables::Scale = 0.0;
 
   // Create label for output
   DocInfo doc_info;
@@ -1139,13 +1091,14 @@ void ElasticBeamProblem::parameter_study()
   // String used for the filename
   char filename[100];
 
+
   // Loop over parameter increments
   unsigned nstep = 10;
   for (unsigned i = 1; i <= nstep; i++)
   {
     // Increment pressure
     Global_Physical_Variables::P_ext += pext_increment;
-    Global_Physical_Variables::Gamma_dot = (1.0) * i;
+    // Global_Physical_Variables::Gamma_dot = (1.0) * i;
 
     // Solve the system
     newton_solve();
@@ -1187,21 +1140,9 @@ void ElasticBeamProblem::parameter_study()
     // (for string under tension)
     trace << Global_Physical_Variables::P_ext << " " << abs(Doc_node_pt->x(1))
           << " " << exact_pressure << std::endl;
-
-    // Output file stream used for writing results
-    ofstream file2;
-
-    // String used for the filename
-    char filename2[100];
-
-    // Open the file and give it a name
-    sprintf(filename2, "RESLT/sum_drag_and_torque%d.dat", i);
-    file2.open(filename2);
-
-    // Document the sum of drag and torque on the entire beam structure
-    Hao_element_pt->output(file2);
-    file2.close();
   }
+  // Document the sum of drag and torque on the entire beam structure
+  Hao_element_pt->output(outfile);
 
 
 } // end of parameter study
@@ -1220,28 +1161,44 @@ int main()
   Global_Physical_Variables::Sigma0 = 0.0;
 
   // Set the length of domain
-  double L = 10.0;
+  double L = 1.0;
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
   unsigned n_element = 100;
 
-  // Construst the problem
-  ElasticBeamProblem problem(n_element, L);
+  // Output file stream used for writing results
+  ofstream outfile;
 
-  // Check that we're ready to go:
-  cout << "\n\n\nProblem self-test ";
-  if (problem.self_test() == 0)
+  // String used for the filename
+  char filename2[100];
+
+  // Open the file and give it a name
+  sprintf(filename2, "RESLT/sum_drag_and_torque.dat");
+  outfile.open(filename2);
+
+  for (unsigned i = 0; i <= 100; i++)
   {
-    cout << "passed: Problem can be solved." << std::endl;
-  }
-  else
-  {
-    throw OomphLibError(
-      "Self test failed", OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
-  }
+    // assign the values to Theta_eq (temporary!)
+    Global_Physical_Variables::Theta_eq = ((2.0 * acos(-1)) / 100.0) * i;
 
-  // Conduct parameter study
-  problem.parameter_study();
+    // Construst the problem
+    ElasticBeamProblem problem(n_element, L);
 
+    // Check that we're ready to go:
+    cout << "\n\n\nProblem self-test ";
+    if (problem.self_test() == 0)
+    {
+      cout << "passed: Problem can be solved." << std::endl;
+    }
+    else
+    {
+      throw OomphLibError(
+        "Self test failed", OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
+    }
+
+    // Conduct parameter study
+    problem.parameter_study(outfile);
+  }
+  outfile.close();
 } // end of main
