@@ -45,7 +45,7 @@ namespace Global_Physical_Variables
   double Sigma0 = 0.0;
 
   /// Non-dimensional coefficeient (FSI)
-  double Q = 1.0;
+  double Q = 0.0;
 
   /// Drift speed and accerlation of horiztontal motion
   double V = 0.3;
@@ -54,7 +54,7 @@ namespace Global_Physical_Variables
   double U0 = 0.5;
 
   /// Beam's inclination
-  double Theta_eq = 0.0;
+  double Theta_eq = -acos(-1) / 6.0;
 
   /// x position of clamped point
   double X0 = 1.0;
@@ -382,22 +382,22 @@ public:
     traction_0[1] = -traction[0] * sin(Theta_eq) + traction[1] * cos(Theta_eq);
   }
 
+  // overloaded load_vector to apply the computed traction_0 with
+  // non-dimensional coefficeient Q (FSI)
+  void load_vector(const unsigned& intpt,
+                   const Vector<double>& xi,
+                   const Vector<double>& x,
+                   const Vector<double>& N,
+                   Vector<double>& load)
+  {
+    compute_slender_body_traction_on_beam_in_reference_configuration(xi, load);
+    load[0] = *(q_pt()) * load[0];
+    load[1] = *(q_pt()) * load[1];
+  }
 
-  // void load_vector(const unsigned& intpt,
-  //                 const Vector<double>& xi,
-  //                  const Vector<double>& x,
-  //                  const Vector<double>& N,
-  //                  Vector<double>& load)
-  //{
-  //  load[0] = 0.0;
-  //   load[1] = 0.0;
-  //   compute_slender_body_traction_on_beam_in_reference_configuration(xi,
-  //   load);
-  // }
 
-
-  /// Compute the element's contribution to the drag and torque on
-  /// the entire beam structure according to slender body theory
+  // Compute the element's contribution to the drag and torque on
+  // the entire beam structure according to slender body theory
   void compute_contribution_to_drag_and_torque(Vector<double>& drag,
                                                double& torque)
   {
@@ -954,7 +954,7 @@ void ElasticBeamProblem::parameter_study()
   for (unsigned i = 0; i <= nstep; i++)
   {
     // Increment Non-dimensional coefficeient (FSI)
-    Global_Physical_Variables::Q = 1.0 * i;
+    Global_Physical_Variables::Q = 1.0e-7 * i;
 
     // Solve the system
     newton_solve();
