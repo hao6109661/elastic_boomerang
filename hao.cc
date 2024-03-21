@@ -47,7 +47,7 @@ namespace Global_Physical_Variables
   /// Non-dimensional coefficeient (FSI)
   double Q = 0.0;
 
-  /// Drift speed and accerlation of horiztontal motion
+  /// Drift speed and acceleration of horiztontal motion
   double V = 0.3;
 
   /// Speed of horiztontal motion
