@@ -139,10 +139,10 @@ public:
 
 
   /// Pass pointer to the Mesh of HaoHermiteBeamElements
-  void set_pointer_to_mesh(Mesh* mesh_pt)
+  void set_pointer_to_beam_mesh(Mesh* beam_mesh_pt)
   {
     // Store the pointer for future reference
-    Beam_mesh_pt = mesh_pt;
+    Beam_mesh_pt = beam_mesh_pt;
   }
 
   /// Compute the beam's centre of mass
@@ -170,10 +170,21 @@ public:
     outfile << total_torque << std::endl;
   }
 
+
+protected:
+
+ // Fill in contribution to residuals
+ void fill_in_contribution_to_residuals(Vector<double>& residuals)
+  {
+   oomph_info << "hello world\n"; 
+  }
+
+ 
 private:
  
   /// Pointer to the Mesh of HaoHermiteBeamElements
   Mesh* Beam_mesh_pt;
+ 
 };
 
 
@@ -796,27 +807,33 @@ public:
   /// Conduct a parameter study
   void parameter_study();
 
-  /// Return pointer to the mesh
-  OneDLagrangianMesh<HaoHermiteBeamElement>* mesh_pt()
-  {
-    return dynamic_cast<OneDLagrangianMesh<HaoHermiteBeamElement>*>(
-      Problem::mesh_pt());
-  }
+ // hierher probably not needed
+  // /// Return pointer to beam mesh
+  // OneDLagrangianMesh<HaoHermiteBeamElement>* beam_mesh_pt()
+  // {
+  //  return Beam_mesh_pt;
+  // }
 
   /// No actions need to be performed after a solve
   void actions_after_newton_solve() {}
 
-  /// No actions need to be performed before a solve
-  void actions_before_newton_solve() {}
-
+ /// No actions need to be performed before a solve
+ void actions_before_newton_solve() {}
+ 
 private:
 
-  /// Pointer to geometric object that represents the beam's undeformed shape
-  GeomObject* Undef_beam_pt;
+ /// Pointer to geometric object that represents the beam's undeformed shape
+ GeomObject* Undef_beam_pt;
+ 
+ /// Pointer to RigidBodyElement that actually contains the rigid body data
+ RigidBodyElement* Rigid_body_element_pt;
+ 
+ /// Pointer to beam mesh
+ OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_pt;
 
-  /// Pointer to RigidBodyElement that actually contains the rigid body data
-  RigidBodyElement* Rigid_body_element_pt;
-
+ /// Pointer to mesh containing the rigid body element
+ Mesh* Rigid_body_element_mesh_pt;
+ 
 }; // end of problem class
 
 
@@ -916,6 +933,9 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
                          Global_Physical_Variables::X0,
                          Global_Physical_Variables::Y0);
 
+  // Add the rigid body element to its own mesh
+  Rigid_body_element_mesh_pt=new Mesh;
+  Rigid_body_element_mesh_pt->add_element_pt(Rigid_body_element_pt);
 
   // Set the undeformed beam shape (in the reference orientation before
   // applying the rigid body motion)
@@ -925,36 +945,35 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes.
   double length=1.0;
-  Problem::mesh_pt() = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+  Beam_mesh_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure
-  Rigid_body_element_pt->set_pointer_to_mesh(mesh_pt());
+  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_pt);
 
+
+  // Build the problem's global mesh
+  add_sub_mesh(Beam_mesh_pt);
+  add_sub_mesh(Rigid_body_element_mesh_pt);
+  build_global_mesh();
+  
   // Set the boundary conditions: One end of the beam is clamped in space
   // Pin displacements in both x and y directions, and pin the derivative of
-  // position Vector w.r.t. to coordinates in x direction. [Note: The
-  // mesh_pt() function has been overloaded
-  //  to return a pointer to the actual mesh, rather than
-  //  a pointer to the Mesh base class. The current mesh is derived
-  //  from the SolidMesh class. In such meshes, all access functions
-  //  to the nodes, such as boundary_node_pt(...), are overloaded
-  //  to return pointers to SolidNodes (whose position can be
-  //  pinned) rather than "normal" Nodes.]
-  mesh_pt()->boundary_node_pt(0, 0)->pin_position(0);
-  mesh_pt()->boundary_node_pt(0, 0)->pin_position(1);
-  mesh_pt()->boundary_node_pt(0, 0)->pin_position(1, 0);
+  // position Vector w.r.t. to coordinates in x direction.
+  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(0);
+  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(1);
+  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
 
   // Find number of elements in the mesh
-  unsigned n_element = mesh_pt()->nelement();
+  unsigned n_element = Beam_mesh_pt->nelement();
 
   // Loop over the elements to set physical parameters etc.
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
     HaoHermiteBeamElement* elem_pt =
-      dynamic_cast<HaoHermiteBeamElement*>(mesh_pt()->element_pt(e));
+      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
 
     // Pass the pointer of RigidBodyElement to the each element
     // so we can work out the rigid body motion
@@ -1009,7 +1028,7 @@ void ElasticBeamProblem::parameter_study()
     // Document the solution
     sprintf(filename, "RESLT/beam%i.dat", i);
     file.open(filename);
-    mesh_pt()->output(file, 5);
+    Beam_mesh_pt->output(file, 5);
     file.close();
   }
 
