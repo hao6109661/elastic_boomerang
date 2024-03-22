@@ -42,15 +42,21 @@ namespace Global_Physical_Variables
   double H = 0.0;
 
   /// 2nd Piola Kirchhoff pre-stress
-  double Sigma0 = 0.0;
+ double Sigma0 = 0.0; // hierher kill
 
-  /// Non-dimensional coefficeient (FSI)
+  /// Non-dimensional coefficient (FSI)
   double Q = 0.0;
 
-  /// Drift speed and acceleration of horiztontal motion
+
+
+ //----------------
+ // hierher these are all initial values and should move into main()
+ // or the problem constructor
+ 
+  /// Drift speed and acceleration of horizontal motion
   double V = 0.3;
 
-  /// Speed of horiztontal motion
+  /// Speed of horizontal motion
   double U0 = 0.5;
 
   /// Beam's inclination
@@ -61,7 +67,9 @@ namespace Global_Physical_Variables
 
   /// y position of clamped point
   double Y0 = 2.0;
+ //----------------
 
+ 
 } // namespace Global_Physical_Variables
 
 
@@ -76,6 +84,7 @@ namespace Global_Physical_Variables
 class RigidBodyElement : public GeneralisedElement
 {
 public:
+ 
   /// Constructor: Pass initial values for rigid body parameters (pinned
   /// by default)
   RigidBodyElement(const double& V,
@@ -139,7 +148,6 @@ public:
   /// Compute the beam's centre of mass
   void compute_centre_of_mass(Vector<double>& r_centre);
 
-
   /// Compute the total drag and torque on the entire beam structure according
   /// to slender body theory
   void compute_drag_and_torque(Vector<double>& total_drag,
@@ -163,6 +171,7 @@ public:
   }
 
 private:
+ 
   /// Pointer to the Mesh of HaoHermiteBeamElements
   Mesh* Beam_mesh_pt;
 };
@@ -178,7 +187,9 @@ private:
 //=====================================================================
 class HaoHermiteBeamElement : public virtual HermiteBeamElement
 {
+ 
 public:
+ 
   /// Pass pointer to RigidBodyElement that contains the rigid body parameters
   void set_pointer_to_rigid_body_element(
     RigidBodyElement* rigid_body_element_pt)
@@ -186,7 +197,7 @@ public:
     // Store the pointer for future reference
     Rigid_body_element_pt = rigid_body_element_pt;
 
-    // Pass the rigid body parameters to HaoHermiteBeamElement
+    // Get the rigid body parameters 
     Vector<Data*> rigid_body_data_pt =
       Rigid_body_element_pt->rigid_body_parameters();
 
@@ -213,7 +224,7 @@ public:
     }
 #endif
 
-    // add the rigid body parameters as the external data for each element
+    // Add the rigid body parameters as the external data for this element
     for (unsigned i = 0; i < 5; i++)
     {
       add_external_data(rigid_body_data_pt[i]);
@@ -221,7 +232,7 @@ public:
   }
 
 
-  /// Return a pointer to non-dimensional coefficeient (FSI)
+  /// Pointer to non-dimensional coefficient (FSI)
   double*& q_pt()
   {
     return Q_pt;
@@ -229,6 +240,7 @@ public:
 
 
   /// Compute the element's contribution to the (\int r ds) and length of beam
+ // hierher add _to_
   void compute_contribution_int_r_and_length(Vector<double>& int_r,
                                              double& length)
   {
@@ -266,18 +278,19 @@ public:
       s[j] = integral_pt()->knot(ipt, j);
 
       // Get position vector to and non-unit tangent vector on wall:
-      // dr/ds
+      // dr/ds. NOTE: This is before we apply the rigid body motion!
+      // so in terms of the write-up the position vector is R_0
       Vector<double> posn(2);
       Vector<double> drds(2);
       get_non_unit_tangent(s, posn, drds);
 
-      // Jacobian. Since Jacobian is the same for R, still use it here.
+      // Jacobian of mapping between local and global coordinates
       double J = sqrt(drds[0] * drds[0] + drds[1] * drds[1]);
 
       // Premultiply the weights and the Jacobian
       double W = w * J;
 
-      // Translate parameters into meaningful variables do this elsewhere too
+      // Translate rigid body parameters into meaningful variables
       double V = 0.0;
       double U0 = 0.0;
       double Theta_eq = 0.0;
@@ -285,9 +298,15 @@ public:
       double Y0 = 0.0;
       Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
+
+      // hierher this is subtle and needs to be explained properly.
+      // Note that we're looking for an pseudo "equilibrium position"
+      // where the angle (and the traction!) remain constant while
+      // the beam still moves as a rigid body!
       double t = 0.0;
 
-      // Compute R which is after translation and rotation
+      // Apply rigid body translation and rotation to get the actual
+      // shape of the deformed body in the fluid
       Vector<double> R(2);
       R[0] = cos(Theta_eq) * posn[0] - sin(Theta_eq) * posn[1] +
              0.5 * V * t * t + U0 * t + X0;
@@ -318,7 +337,10 @@ public:
     }
 #endif
 
-    // Get the Eulerian position and the unit normal
+    // Get the Eulerian position and the unit normal.
+    // NOTE: This is before we apply the rigid body motion!
+    // so in terms of the write-up the position vector is R_0 and N_0
+    // hierher call them that!
     Vector<double> posn(2);
     Vector<double> N(2);
     get_normal(s, posn, N);
@@ -331,6 +353,12 @@ public:
     double Y0 = 0.0;
     Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
+
+    // hierher compute R and N explicitly rather than embedding the
+    // transformation into the equation for the traction
+    // and whatever else is required! But be explicit!
+
+    
     // Compute the traction onto the element at local coordinate s
     traction[0] =
       (1.0 - 0.5 * pow((-sin(Theta_eq) * N[0] - cos(Theta_eq) * N[1]), 2)) *
@@ -347,7 +375,7 @@ public:
 
 
   /// Compute the slender body traction acting on the beam in the reference
-  /// configuration onto the element at local coordinate s
+  /// configuration (i.e. without rigid body motion!) at local coordinate s
   void compute_slender_body_traction_on_beam_in_reference_configuration(
     const Vector<double>& s, Vector<double>& traction_0)
   {
@@ -378,25 +406,32 @@ public:
 
     // Rotate the traction from the actual beam back to the reference
     // configuration.
-    traction_0[0] = traction[0] * cos(Theta_eq) + traction[1] * sin(Theta_eq);
+    traction_0[0] =  traction[0] * cos(Theta_eq) + traction[1] * sin(Theta_eq);
     traction_0[1] = -traction[0] * sin(Theta_eq) + traction[1] * cos(Theta_eq);
   }
 
-  // overloaded load_vector to apply the computed traction_0 with
-  // non-dimensional coefficeient Q (FSI)
+  // overloaded load_vector to apply the computed traction_0 (i.e. the
+  // traction acting on the beam before its rigid body motion is applied)
+  // including the non-dimensional coefficient Q (FSI)
   void load_vector(const unsigned& intpt,
                    const Vector<double>& xi,
                    const Vector<double>& x,
                    const Vector<double>& N,
                    Vector<double>& load)
   {
-    compute_slender_body_traction_on_beam_in_reference_configuration(xi, load);
+
+   /// Return local coordinate s[j]  at the specified integration point.
+   Vector<double> s(1);
+   unsigned j = 0;
+   s[j] = integral_pt()->knot(intpt, j);
+   
+    compute_slender_body_traction_on_beam_in_reference_configuration(s, load);
     load[0] = *(q_pt()) * load[0];
     load[1] = *(q_pt()) * load[1];
   }
 
 
-  // Compute the element's contribution to the drag and torque on
+  // Compute the element's contribution to the total drag and torque on
   // the entire beam structure according to slender body theory
   void compute_contribution_to_drag_and_torque(Vector<double>& drag,
                                                double& torque)
@@ -436,6 +471,10 @@ public:
     double Y0 = 0.0;
     Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
+    // hierher this is subtle and needs to be explained properly.
+    // Note that we're looking for an pseudo "equilibrium position"
+    // where the angle (and the traction!) remain constant while
+    // the beam still moves as a rigid body!
     double t = 0.0;
 
     // Loop over the integration points
@@ -451,6 +490,9 @@ public:
 
       // Get position vector to and non-unit tangent vector on wall:
       // dr/ds
+      // NOTE: This is before we apply the rigid body motion!
+      // so in terms of the write-up the position vector is R_0 
+      // hierher call them that!
       Vector<double> posn(2);
       Vector<double> drds(2);
       get_non_unit_tangent(s, posn, drds);
@@ -467,15 +509,14 @@ public:
       Vector<double> traction(2);
       compute_slender_body_traction_on_actual_beam(s, traction);
 
-      // Compute R which is after translation and rotation
+      // Compute R (after translation and rotation)
       Vector<double> R(2);
       R[0] = cos(Theta_eq) * posn[0] - sin(Theta_eq) * posn[1] +
              0.5 * V * t * t + U0 * t + X0;
       R[1] = sin(Theta_eq) * posn[0] + cos(Theta_eq) * posn[1] + V * t + Y0;
 
       // calculate the contribution to torque
-      double local_torque = 0.0;
-      local_torque =
+      double local_torque =
         (R[0] - r_centre[0]) * traction[1] - (R[1] - r_centre[1]) * traction[0];
 
       // Add 'em
@@ -526,7 +567,7 @@ public:
       // Loop over coordinate directions/components of Vector
       for (unsigned i = 0; i < n_dim; i++)
       {
-        // Initialise acclerations and veloc
+        // Initialise 
         posn[i] = 0.0;
       }
 
@@ -574,15 +615,20 @@ public:
       double Y0 = 0.0;
       Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
+      
+      // hierher this is subtle and needs to be explained properly.
+      // Note that we're looking for an pseudo "equilibrium position"
+      // where the angle (and the traction!) remain constant while
+      // the beam still moves as a rigid body!
       double t = 0.0;
 
-      // Compute R which is after translation and rotation
+      // Compute R after translation and rotation
       Vector<double> R(n_dim);
       R[0] = cos(Theta_eq) * posn[0] - sin(Theta_eq) * posn[1] +
              0.5 * V * t * t + U0 * t + X0;
       R[1] = sin(Theta_eq) * posn[0] + cos(Theta_eq) * posn[1] + V * t + Y0;
 
-      // Compute normal N which is after translation and rotation
+      // Compute normal N after translation and rotation
       Vector<double> N(n_dim);
       N[0] = cos(Theta_eq) * N_0[0] - sin(Theta_eq) * N_0[1];
       N[1] = sin(Theta_eq) * N_0[0] + cos(Theta_eq) * N_0[1];
@@ -627,6 +673,7 @@ public:
   }
 
 private:
+ 
   /// Pointer to element that controls the rigid body motion
   RigidBodyElement* Rigid_body_element_pt;
 
@@ -641,10 +688,12 @@ private:
 
 
 //=============================================================================
-/// Compute the beam's centre of mass
+/// Compute the beam's centre of mass (defined outside class to avoid
+/// forward references)
 //=============================================================================
 void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre)
 {
+ 
 #ifdef PARANOID
   if (r_centre.size() != 2)
   {
@@ -738,10 +787,11 @@ void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
 //======================================================================
 class ElasticBeamProblem : public Problem
 {
+ 
 public:
-  /// Constructor: The arguments are the number of elements,
-  /// the length of domain
-  ElasticBeamProblem(const unsigned& n_elem, const double& length);
+ 
+  /// Constructor: The arguments are the number of elements
+  ElasticBeamProblem(const unsigned& n_elem);
 
   /// Conduct a parameter study
   void parameter_study();
@@ -760,8 +810,6 @@ public:
   void actions_before_newton_solve() {}
 
 private:
-  /// Length of domain (in terms of the Lagrangian coordinates)
-  double Length;
 
   /// Pointer to geometric object that represents the beam's undeformed shape
   GeomObject* Undef_beam_pt;
@@ -784,17 +832,17 @@ private:
 //=========================================================================
 class StraightLineVertical : public GeomObject
 {
+ 
 public:
+ 
   /// Constructor derives from GeomObject(1, 2)
   StraightLineVertical() : GeomObject(1, 2) {}
-
 
   /// Broken copy constructor
   StraightLineVertical(const StraightLineVertical& dummy) = delete;
 
   /// Broken assignment operator
   void operator=(const StraightLineVertical&) = delete;
-
 
   /// Position Vector at Lagrangian coordinate zeta
   void position(const Vector<double>& zeta, Vector<double>& r) const
@@ -857,9 +905,7 @@ public:
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
 //======================================================================
-ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
-                                       const double& length)
-  : Length(length)
+ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
 {
   // Make the RigidBodyElement that stores the parameters for the rigid body
   // motion
@@ -871,17 +917,19 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
                          Global_Physical_Variables::Y0);
 
 
-  // Set the undeformed beam shape
+  // Set the undeformed beam shape (in the reference orientation before
+  // applying the rigid body motion)
   Undef_beam_pt = new StraightLineVertical();
-
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes.
+  double length=1.0;
   Problem::mesh_pt() = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
+  // so it can work out the drag and torque on the entire structure
   Rigid_body_element_pt->set_pointer_to_mesh(mesh_pt());
 
   // Set the boundary conditions: One end of the beam is clamped in space
@@ -909,13 +957,13 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
       dynamic_cast<HaoHermiteBeamElement*>(mesh_pt()->element_pt(e));
 
     // Pass the pointer of RigidBodyElement to the each element
+    // so we can work out the rigid body motion
     elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
     // Set physical parameters for each element:
-    elem_pt->sigma0_pt() = &Global_Physical_Variables::Sigma0;
+    // hierher kill elem_pt->sigma0_pt() = &Global_Physical_Variables::Sigma0;
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->q_pt() = &Global_Physical_Variables::Q;
-
 
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
@@ -942,19 +990,18 @@ void ElasticBeamProblem::parameter_study()
   // directory exists and issues a warning if it doesn't.
   doc_info.set_directory("RESLT");
 
-
   // Output file stream used for writing results
   ofstream file;
+  
   // String used for the filename
   char filename[100];
-
 
   // Loop over parameter increments
   unsigned nstep = 10;
   for (unsigned i = 0; i <= nstep; i++)
   {
     // Increment Non-dimensional coefficeient (FSI)
-    Global_Physical_Variables::Q = 1.0e-7 * i;
+   Global_Physical_Variables::Q = 1.0e-7 * double(i);
 
     // Solve the system
     newton_solve();
@@ -979,15 +1026,12 @@ int main()
   // Set the 2nd Piola Kirchhoff prestress
   Global_Physical_Variables::Sigma0 = 0.0;
 
-  // Set the length of domain
-  double L = 1.0;
-
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
   unsigned n_element = 10;
 
   // Construst the problem
-  ElasticBeamProblem problem(n_element, L);
+  ElasticBeamProblem problem(n_element);
 
   // Check that we're ready to go:
   cout << "\n\n\nProblem self-test ";
