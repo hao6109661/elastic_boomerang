@@ -20,8 +20,8 @@ Q=i
 set output sprintf("beam_traction%d.png",i)
 
 # Set the plot range
-    set yrange [-1:5]
-    set xrange [-2:6]
+set yrange [-1:5]
+set xrange [-2:6]
 
 # Set labels for the axes
 set xlabel "x"
