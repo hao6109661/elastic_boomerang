@@ -27,7 +27,7 @@ set title "Plot of Traction"
 file = sprintf("beam%d.dat",i)
 file2 = sprintf("beam_second_arm%d.dat",i)
 
-set label 1 sprintf("{/symbol q} = π/6,V = 0.5, U_0 = 0.8, X_0 = 1.5, Y_0 = 2.5") at screen 0.98, 0.02 right front font ",10"
+#set label 1 sprintf("{/symbol q} = π/6,V = 0.5, U_0 = 0.8, X_0 = 1.5, Y_0 = 2.5") at screen 0.98, 0.02 right front font ",10"
 set label 2 sprintf("Q=%.1f*10^{-7}",Q) at screen 0.2, 0.02 right front font ",12"
 
 # Calculate the endpoint coordinates of the vectors
