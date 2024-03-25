@@ -115,6 +115,9 @@ public:
   }
 
 
+
+ // hierher kill
+ 
   /// Note that this is the helper function to compute the meaningful parameter
   /// values for the second arm of the beam (rotation angle now is
   /// Theta_eq-Alpha)
@@ -166,8 +169,9 @@ public:
   }
 
 
+ // kill all references to type
   /// Compute the beam's centre of mass (Type=0: first arm, Type=1: second arm.)
-  void compute_centre_of_mass(Vector<double>& r_centre, const unsigned Type);
+  void compute_centre_of_mass(Vector<double>& r_centre, const unsigned& Type);
 
 
   /// Compute the total drag and torque on the entire beam structure according
@@ -202,6 +206,10 @@ protected:
     oomph_info << "ndof in element: " << residuals.size() << std::endl;
     // Get current total drag and torque (Type=0: first arm, Type=1: second
     // arm.)
+   
+    // hierher only call this function once but but the compute_drag_and_torque
+    // fct should loop both beam meshes! 
+
     Vector<double> total_drag_0(2);
     double total_torque_0 = 0.0;
     compute_drag_and_torque(total_drag_0, total_torque_0, 0);
@@ -262,8 +270,9 @@ protected:
   }
 
 private:
+
   /// Pointer to the Mesh of HaoHermiteBeamElements (first arm)
-  SolidMesh* Beam_mesh_pt;
+  SolidMesh* Beam_mesh_first_arm_pt; // hierher fix this.
 
 
   /// Pointer to the Mesh of HaoHermiteBeamElements (second arm)
@@ -281,9 +290,17 @@ private:
 //=====================================================================
 class HaoHermiteBeamElement : public virtual HermiteBeamElement
 {
+ 
 public:
-  /// Pass pointer to RigidBodyElement that contains the rigid body parameters
-  void set_pointer_to_rigid_body_element(
+ 
+ /// Constructor: Initialise private member data
+ HaoHermiteBeamElement() : Rigid_body_element_pt(0),
+                           Q_pt(0), Theta_initial_pt(0)
+  {}
+ 
+ 
+ /// Pass pointer to RigidBodyElement that contains the rigid body parameters
+ void set_pointer_to_rigid_body_element(
     RigidBodyElement* rigid_body_element_pt)
   {
     // Store the pointer for future reference
@@ -331,6 +348,27 @@ public:
   }
 
 
+ /// Pointer to initial angle
+ void theta_initial_pt(const double* theta_initial_pt)
+  {
+   Theta_initial_pt=theta_initial_pt;
+  }
+
+ /// Initial angle
+ void theta_initial() const
+  {
+   if (Theta_initial_pt==0)
+    {
+     return 0.0;
+    }
+   else
+    {
+     return *Theta_initial_pt;
+    }
+  }
+
+
+ // hierher kill
   /// select first arm of the beam
   void select_first_arm()
   {
@@ -338,6 +376,7 @@ public:
   }
 
 
+ // hierher kill
   /// select second arm of the beam
   void select_second_arm()
   {
@@ -416,12 +455,15 @@ public:
       // the beam still moves as a rigid body!
       double t = 0.0;
 
+
+      // hierher use Theta_initial everywhere whenever you're processing Theta_eq
+
       // Apply rigid body translation and rotation to get the actual
       // shape of the deformed body in the fluid
       Vector<double> R(2);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq-theta_initial()) * R_0[0] - sin(Theta_eq-theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq-theta_initial()) * R_0[0] + cos(Theta_eq-theta_initial()) * R_0[1] + V * t + Y0;
 
       // Add 'em.
       length += W;
@@ -478,14 +520,14 @@ public:
 
     // Compute R which is after translation and rotation
     Vector<double> R(2);
-    R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+    R[0] = cos(Theta_eq-theta_initial()) * R_0[0] - sin(Theta_eq-theta_initial()) * R_0[1] + 0.5 * V * t * t +
            U0 * t + X0;
-    R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+    R[1] = sin(Theta_eq-theta_initial()) * R_0[0] + cos(Theta_eq-theta_initial()) * R_0[1] + V * t + Y0;
 
     // Compute normal N which is after translation and rotation
     Vector<double> N(2);
-    N[0] = cos(Theta_eq) * N_0[0] - sin(Theta_eq) * N_0[1];
-    N[1] = sin(Theta_eq) * N_0[0] + cos(Theta_eq) * N_0[1];
+    N[0] = cos(Theta_eq-theta_initial()) * N_0[0] - sin(Theta_eq-theta_initial()) * N_0[1];
+    N[1] = sin(Theta_eq-theta_initial()) * N_0[0] + cos(Theta_eq-theta_initial()) * N_0[1];
 
     // Compute the traction onto the element at local coordinate s
     traction[0] = 0.5 * (V * t - R[1] + U0) * N[1] * N[1] -
@@ -536,8 +578,8 @@ public:
 
     // Rotate the traction from the actual beam back to the reference
     // configuration.
-    traction_0[0] = traction[0] * cos(Theta_eq) + traction[1] * sin(Theta_eq);
-    traction_0[1] = -traction[0] * sin(Theta_eq) + traction[1] * cos(Theta_eq);
+    traction_0[0] =  traction[0] * cos(Theta_eq-theta_initial()) + traction[1] * sin(Theta_eq-theta_initial());
+    traction_0[1] = -traction[0] * sin(Theta_eq-theta_initial()) + traction[1] * cos(Theta_eq-theta_initial());
   }
 
 
@@ -647,9 +689,9 @@ public:
 
       // Compute R (after translation and rotation)
       Vector<double> R(2);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq-theta_initial()) * R_0[0] - sin(Theta_eq-theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq-theta_initial()) * R_0[0] + cos(Theta_eq-theta_initial()) * R_0[1] + V * t + Y0;
 
       // calculate the contribution to torque
       double local_torque =
@@ -767,14 +809,14 @@ public:
 
       // Compute R after translation and rotation
       Vector<double> R(n_dim);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq-theta_initial()) * R_0[0] - sin(Theta_eq-theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq-theta_initial()) * R_0[0] + cos(Theta_eq-theta_initial()) * R_0[1] + V * t + Y0;
 
       // Compute normal N after translation and rotation
       Vector<double> N(n_dim);
-      N[0] = cos(Theta_eq) * N_0[0] - sin(Theta_eq) * N_0[1];
-      N[1] = sin(Theta_eq) * N_0[0] + cos(Theta_eq) * N_0[1];
+      N[0] = cos(Theta_eq-theta_initial()) * N_0[0] - sin(Theta_eq-theta_initial()) * N_0[1];
+      N[1] = sin(Theta_eq-theta_initial()) * N_0[0] + cos(Theta_eq-theta_initial()) * N_0[1];
 
       // Output R0 which is clamped at the origin
       for (unsigned i = 0; i < n_dim; i++)
@@ -816,14 +858,17 @@ public:
   }
 
 private:
+ 
   /// Pointer to element that controls the rigid body motion
   RigidBodyElement* Rigid_body_element_pt;
 
-  /// Pointer to non-dimensional coefficeient (FSI)
+  /// Pointer to non-dimensional coefficient (FSI)
   double* Q_pt;
 
-  /// Select one arm of the beam (Type=0: first arm, Type=1: second arm.)
-  unsigned Type;
+ /// Pointer to initial rotation of the element when it's in its (otherwise)
+ /// undeformed configuration
+ double* Theta_initial_pt;
+ 
 };
 
 
@@ -975,20 +1020,15 @@ void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
 //======================================================================
 class ElasticBeamProblem : public Problem
 {
+
 public:
+
   /// Constructor: The arguments are the number of elements and the parameter to
   /// determine the length of the beam
   ElasticBeamProblem(const unsigned& n_elem, const double& q);
 
   /// Conduct a parameter study
   void parameter_study();
-
-  // hierher probably not needed
-  // /// Return pointer to beam mesh
-  // OneDLagrangianMesh<HaoHermiteBeamElement>* beam_mesh_pt()
-  // {
-  //  return Beam_mesh_pt;
-  // }
 
   /// No actions need to be performed after a solve
   void actions_after_newton_solve() {}
@@ -1177,6 +1217,8 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     // so we can work out the rigid body motion
     elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
+
+    // hierher kill
     // select first arm (assign Type=0)
     elem_pt->select_first_arm();
 
@@ -1184,8 +1226,11 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->q_pt() = &Global_Physical_Variables::Q;
 
+    // Note: no rotation!
+
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+    
   } // end of loop over elements
 
 
@@ -1210,6 +1255,8 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     // so we can work out the rigid body motion
     elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
+
+    // kill this
     // select second arm (assign Type=1)
     elem_pt->select_second_arm();
 
@@ -1217,8 +1264,12 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->q_pt() = &Global_Physical_Variables::Q;
 
+    // Rotate by opening angle
+    elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
+
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+    
   } // end of loop over elements
 
   // Assign the global and local equation numbers
