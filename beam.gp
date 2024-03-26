@@ -36,12 +36,12 @@ file2 = sprintf("beam_second_arm%d.dat",i)
 
 # Write the additional information to the plot 
 #set label 1 sprintf("{/symbol q} = π/6,V = 0.5, U_0 = 0.8, X_0 = 1.5, Y_0 = 2.5") at screen 0.98, 0.02 right front font ",10"
-set label 2 sprintf("Q=%.1f*10^{-7}",Q) at screen 0.2, 0.02 right front font ",12"
+#set label 2 sprintf("Q=%.1f*10^{-7}",Q) at screen 0.2, 0.02 right front font ",12"
 
 # Plot the figures 
 plot file using 1:2 with lines linewidth 2 lc rgb "red" title "Beam", \
      file using 3:4 with lines linewidth 2 lc rgb "blue" title "Beam move",\
-     file2 using 1:2 with lines linewidth 2 lc rgb "pink" title "Beam 2",\
+     file2 using 1:2 with lines linewidth 2 lc rgb "green" title "Beam 2",\
      file2 using 3:4 with lines linewidth 2 lc rgb "brown" title "Beam move 2"
 }
 
