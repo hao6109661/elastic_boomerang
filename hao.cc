@@ -115,20 +115,6 @@ public:
   }
 
 
-  /// Note that this is the helper function to compute the meaningful parameter
-  /// values for the second arm of the beam (rotation angle now is
-  /// Theta_eq-Alpha)
-  void get_parameters_second_arm(
-    double& V, double& U0, double& Theta_eq, double& X0, double& Y0)
-  {
-    V = internal_data_pt(0)->value(0);
-    U0 = internal_data_pt(1)->value(0);
-    Theta_eq = internal_data_pt(2)->value(0) - Global_Physical_Variables::Alpha;
-    X0 = internal_data_pt(3)->value(0);
-    Y0 = internal_data_pt(4)->value(0);
-  }
-
-
   /// Pass pointer to the Mesh of HaoHermiteBeamElements
   /// and add their unknowns to be external data for this element
   void set_pointer_to_beam_mesh(SolidMesh* beam_mesh_pt)
@@ -147,45 +133,24 @@ public:
   }
 
 
-  /// Pass pointer to the Mesh of HaoHermiteBeamElements
-  /// and add their unknowns to be external data for this element
-  void set_pointer_to_beam_second_arm_mesh(SolidMesh* beam_mesh_second_arm_pt)
-  {
-    // Store the pointer for future reference
-    Beam_mesh_second_arm_pt = beam_mesh_second_arm_pt;
-
-    // Loop over the nodes in the mesh and add them as external Data
-    // because they affect the traction and therefore the total drag
-    // and torque on the object.
-    unsigned nnode = beam_mesh_second_arm_pt->nnode();
-    for (unsigned j = 0; j < nnode; j++)
-    {
-      add_external_data(
-        beam_mesh_second_arm_pt->node_pt(j)->variable_position_pt());
-    }
-  }
-
-
-  /// Compute the beam's centre of mass (Type=0: first arm, Type=1: second arm.)
-  void compute_centre_of_mass(Vector<double>& r_centre, const unsigned Type);
+  /// Compute the beam's centre of mass
+  void compute_centre_of_mass(Vector<double>& r_centre);
 
 
   /// Compute the total drag and torque on the entire beam structure according
-  /// to slender body theory (Type=0: first arm, Type=1: second arm.)
+  /// to slender body theory
   void compute_drag_and_torque(Vector<double>& total_drag,
-                               double& total_torque,
-                               const unsigned Type);
+                               double& total_torque);
 
 
-  /// Output the total drag and torque on the entire beam structure (Type=0:
-  /// first arm, Type=1: second arm.)
-  void output(std::ostream& outfile, const unsigned Type)
+  /// Output the total drag and torque on the entire beam structure
+  void output(std::ostream& outfile)
   {
     Vector<double> total_drag(2);
     double total_torque = 0.0;
 
     // Compute the total drag and torque on the entire beam structure
-    compute_drag_and_torque(total_drag, total_torque, Type);
+    compute_drag_and_torque(total_drag, total_torque);
 
     // Output Theta_eq, total drag and torque
     outfile << internal_data_pt(2)->value(0) << "  ";
@@ -200,19 +165,14 @@ protected:
   void fill_in_contribution_to_residuals(Vector<double>& residuals)
   {
     oomph_info << "ndof in element: " << residuals.size() << std::endl;
-    // Get current total drag and torque (Type=0: first arm, Type=1: second
-    // arm.)
-    Vector<double> total_drag_0(2);
-    double total_torque_0 = 0.0;
-    compute_drag_and_torque(total_drag_0, total_torque_0, 0);
+    // Get current total drag and torque
 
+    // hierher only call this function once but but the compute_drag_and_torque
+    // fct should loop both beam meshes!
 
-    // Get current total drag and torque (Type=0: first arm, Type=1: second
-    // arm.)
     Vector<double> total_drag(2);
     double total_torque = 0.0;
-    compute_drag_and_torque(total_drag, total_torque, 1);
-
+    compute_drag_and_torque(total_drag, total_torque);
 
     unsigned n_internal = ninternal_data();
     for (unsigned i = 0; i < n_internal; i++)
@@ -228,21 +188,21 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          residuals[eqn_number] = total_drag_0[0] + total_drag[0];
+          residuals[eqn_number] = total_drag[0];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::V;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          residuals[eqn_number] = total_drag_0[1] + total_drag[1];
+          residuals[eqn_number] = total_drag[1];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::U0;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          residuals[eqn_number] = total_torque_0 + total_torque;
+          residuals[eqn_number] = total_torque;
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::Theta_eq;
         }
@@ -262,12 +222,8 @@ protected:
   }
 
 private:
-  /// Pointer to the Mesh of HaoHermiteBeamElements (first arm)
+  /// Pointer to the Mesh of HaoHermiteBeamElements
   SolidMesh* Beam_mesh_pt;
-
-
-  /// Pointer to the Mesh of HaoHermiteBeamElements (second arm)
-  SolidMesh* Beam_mesh_second_arm_pt;
 };
 
 
@@ -282,6 +238,13 @@ private:
 class HaoHermiteBeamElement : public virtual HermiteBeamElement
 {
 public:
+  /// Constructor: Initialise private member data
+  HaoHermiteBeamElement()
+    : Rigid_body_element_pt(0), Q_pt(0), Theta_initial_pt(0)
+  {
+  }
+
+
   /// Pass pointer to RigidBodyElement that contains the rigid body parameters
   void set_pointer_to_rigid_body_element(
     RigidBodyElement* rigid_body_element_pt)
@@ -331,18 +294,25 @@ public:
   }
 
 
-  /// select first arm of the beam
-  void select_first_arm()
+  /// Pointer to initial angle
+  void theta_initial_pt(const double* theta_initial_pt)
   {
-    Type = 0;
+    Theta_initial_pt = theta_initial_pt;
   }
 
-
-  /// select second arm of the beam
-  void select_second_arm()
+  /// Initial angle
+  double theta_initial() const
   {
-    Type = 1;
+    if (Theta_initial_pt == 0)
+    {
+      return 0.0;
+    }
+    else
+    {
+      return *Theta_initial_pt;
+    }
   }
+
 
   /// Compute the element's contribution to the (\int r ds) and length of beam
   void compute_contribution_to_int_r_and_length(Vector<double>& int_r,
@@ -401,27 +371,25 @@ public:
       double Theta_eq = 0.0;
       double X0 = 0.0;
       double Y0 = 0.0;
-      if (Type == 0)
-      {
-        Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-      }
-      else
-      {
-        Rigid_body_element_pt->get_parameters_second_arm(
-          V, U0, Theta_eq, X0, Y0);
-      }
+      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
       // Note that we're looking for an pseudo "equilibrium position"
       // where the angle (and the traction!) remain constant while
       // the beam still moves as a rigid body!
       double t = 0.0;
 
+
+      // hierher use Theta_initial everywhere whenever you're processing
+      // Theta_eq
+
       // Apply rigid body translation and rotation to get the actual
       // shape of the deformed body in the fluid
       Vector<double> R(2);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
+             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
+             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
 
       // Add 'em.
       length += W;
@@ -462,14 +430,7 @@ public:
     double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    if (Type == 0)
-    {
-      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-    }
-    else
-    {
-      Rigid_body_element_pt->get_parameters_second_arm(V, U0, Theta_eq, X0, Y0);
-    }
+    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
     // Note that we're looking for an pseudo "equilibrium position"
     // where the angle (and the traction!) remain constant while
@@ -478,14 +439,18 @@ public:
 
     // Compute R which is after translation and rotation
     Vector<double> R(2);
-    R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
-           U0 * t + X0;
-    R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+    R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
+           sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t + U0 * t +
+           X0;
+    R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
+           cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
 
     // Compute normal N which is after translation and rotation
     Vector<double> N(2);
-    N[0] = cos(Theta_eq) * N_0[0] - sin(Theta_eq) * N_0[1];
-    N[1] = sin(Theta_eq) * N_0[0] + cos(Theta_eq) * N_0[1];
+    N[0] = cos(Theta_eq + theta_initial()) * N_0[0] -
+           sin(Theta_eq + theta_initial()) * N_0[1];
+    N[1] = sin(Theta_eq + theta_initial()) * N_0[0] +
+           cos(Theta_eq + theta_initial()) * N_0[1];
 
     // Compute the traction onto the element at local coordinate s
     traction[0] = 0.5 * (V * t - R[1] + U0) * N[1] * N[1] -
@@ -520,14 +485,7 @@ public:
     double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    if (Type == 0)
-    {
-      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-    }
-    else
-    {
-      Rigid_body_element_pt->get_parameters_second_arm(V, U0, Theta_eq, X0, Y0);
-    }
+    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
     // Compute the slender body traction acting on the actual beam onto the
     // element at local coordinate s
@@ -536,8 +494,10 @@ public:
 
     // Rotate the traction from the actual beam back to the reference
     // configuration.
-    traction_0[0] = traction[0] * cos(Theta_eq) + traction[1] * sin(Theta_eq);
-    traction_0[1] = -traction[0] * sin(Theta_eq) + traction[1] * cos(Theta_eq);
+    traction_0[0] = traction[0] * cos(Theta_eq + theta_initial()) +
+                    traction[1] * sin(Theta_eq + theta_initial());
+    traction_0[1] = -traction[0] * sin(Theta_eq + theta_initial()) +
+                    traction[1] * cos(Theta_eq + theta_initial());
   }
 
 
@@ -585,7 +545,7 @@ public:
 
     // Compute the beam's positon of centre of mass
     Vector<double> r_centre(2);
-    Rigid_body_element_pt->compute_centre_of_mass(r_centre, Type);
+    Rigid_body_element_pt->compute_centre_of_mass(r_centre);
 
     // Local coordinate (1D!)
     Vector<double> s(1);
@@ -600,14 +560,7 @@ public:
     double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    if (Type == 0)
-    {
-      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-    }
-    else
-    {
-      Rigid_body_element_pt->get_parameters_second_arm(V, U0, Theta_eq, X0, Y0);
-    }
+    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
     // Note that we're looking for an pseudo "equilibrium position"
     // where the angle (and the traction!) remain constant while
@@ -647,9 +600,11 @@ public:
 
       // Compute R (after translation and rotation)
       Vector<double> R(2);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
+             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
+             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
 
       // calculate the contribution to torque
       double local_torque =
@@ -744,21 +699,13 @@ public:
         s, traction_0);
 
       // Translate rigid body parameters into meaningful variables
-      // (Type=0: first arm, Type=1: second arm.)
       double V = 0.0;
       double U0 = 0.0;
       double Theta_eq = 0.0;
       double X0 = 0.0;
       double Y0 = 0.0;
-      if (Type == 0)
-      {
-        Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-      }
-      else
-      {
-        Rigid_body_element_pt->get_parameters_second_arm(
-          V, U0, Theta_eq, X0, Y0);
-      }
+      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+
 
       // Note that we're looking for an pseudo "equilibrium position"
       // where the angle (and the traction!) remain constant while
@@ -767,14 +714,18 @@ public:
 
       // Compute R after translation and rotation
       Vector<double> R(n_dim);
-      R[0] = cos(Theta_eq) * R_0[0] - sin(Theta_eq) * R_0[1] + 0.5 * V * t * t +
+      R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
+             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
              U0 * t + X0;
-      R[1] = sin(Theta_eq) * R_0[0] + cos(Theta_eq) * R_0[1] + V * t + Y0;
+      R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
+             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
 
       // Compute normal N after translation and rotation
       Vector<double> N(n_dim);
-      N[0] = cos(Theta_eq) * N_0[0] - sin(Theta_eq) * N_0[1];
-      N[1] = sin(Theta_eq) * N_0[0] + cos(Theta_eq) * N_0[1];
+      N[0] = cos(Theta_eq + theta_initial()) * N_0[0] -
+             sin(Theta_eq + theta_initial()) * N_0[1];
+      N[1] = sin(Theta_eq + theta_initial()) * N_0[0] +
+             cos(Theta_eq + theta_initial()) * N_0[1];
 
       // Output R0 which is clamped at the origin
       for (unsigned i = 0; i < n_dim; i++)
@@ -819,11 +770,12 @@ private:
   /// Pointer to element that controls the rigid body motion
   RigidBodyElement* Rigid_body_element_pt;
 
-  /// Pointer to non-dimensional coefficeient (FSI)
+  /// Pointer to non-dimensional coefficient (FSI)
   double* Q_pt;
 
-  /// Select one arm of the beam (Type=0: first arm, Type=1: second arm.)
-  unsigned Type;
+  /// Pointer to initial rotation of the element when it's in its (otherwise)
+  /// undeformed configuration
+  const double* Theta_initial_pt;
 };
 
 
@@ -836,8 +788,7 @@ private:
 /// Compute the beam's centre of mass (defined outside class to avoid
 /// forward references)
 //=============================================================================
-void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre,
-                                              const unsigned Type)
+void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre)
 {
 #ifdef PARANOID
   if (r_centre.size() != 2)
@@ -851,17 +802,8 @@ void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre,
   }
 #endif
 
-  // Find number of elements in the mesh (Type=0: first arm, Type=1: second
-  // arm.)
-  unsigned n_element = 0;
-  if (Type == 0)
-  {
-    n_element = Beam_mesh_pt->nelement();
-  }
-  else
-  {
-    n_element = Beam_mesh_second_arm_pt->nelement();
-  }
+  // Find number of elements in the mesh
+  unsigned n_element = Beam_mesh_pt->nelement();
 
   Vector<double> int_r(2);
   double length = 0.0;
@@ -869,24 +811,13 @@ void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre,
   double total_length = 0.0;
 
   // Loop over the elements to compute the sum of elements' contribution to
-  // the (\int r ds) and the length of beam (Type=0: first arm, Type=1: second
-  // arm.)
-  HaoHermiteBeamElement* elem_pt;
+  // the (\int r ds) and the length of beam
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
-    if (Type == 0)
-    {
-      elem_pt =
-        dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
-      elem_pt->select_first_arm();
-    }
-    else
-    {
-      elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
-        Beam_mesh_second_arm_pt->element_pt(e));
-      elem_pt->select_second_arm();
-    }
+
+    HaoHermiteBeamElement* elem_pt =
+      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
 
     // Compute contribution to the the (\int r ds) and length of beam within
     // the e-th element
@@ -909,8 +840,7 @@ void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre,
 /// slender body theory (Type=0: first arm, Type=1: second arm.)
 //=============================================================================
 void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
-                                               double& total_torque,
-                                               const unsigned Type)
+                                               double& total_torque)
 {
 #ifdef PARANOID
   if (total_drag.size() != 2)
@@ -924,40 +854,19 @@ void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
   }
 #endif
 
-  // Find number of elements in the mesh (Type=0: first arm, Type=1: second
-  // arm.)
-  unsigned n_element = 0;
-  if (Type == 0)
-  {
-    n_element = Beam_mesh_pt->nelement();
-  }
-  else
-  {
-    n_element = Beam_mesh_second_arm_pt->nelement();
-  }
+  // Find number of elements in the mesh
+  unsigned n_element = Beam_mesh_pt->nelement();
 
   Vector<double> drag(2);
   double torque = 0.0;
 
   // Loop over the elements to compute the sum of elements' contribution to
-  // the drag and torque on the entire beam structure (Type=0: first arm,
-  // Type=1: second arm.)
-  HaoHermiteBeamElement* elem_pt;
+  // the drag and torque on the entire beam structure
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
-    if (Type == 0)
-    {
-      elem_pt =
-        dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
-      elem_pt->select_first_arm();
-    }
-    else
-    {
-      elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
-        Beam_mesh_second_arm_pt->element_pt(e));
-      elem_pt->select_second_arm();
-    }
+    HaoHermiteBeamElement* elem_pt =
+      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
 
     // Compute contribution to the drag and torque within the e-th element
     elem_pt->compute_contribution_to_drag_and_torque(drag, torque);
@@ -983,13 +892,6 @@ public:
   /// Conduct a parameter study
   void parameter_study();
 
-  // hierher probably not needed
-  // /// Return pointer to beam mesh
-  // OneDLagrangianMesh<HaoHermiteBeamElement>* beam_mesh_pt()
-  // {
-  //  return Beam_mesh_pt;
-  // }
-
   /// No actions need to be performed after a solve
   void actions_after_newton_solve() {}
 
@@ -1004,7 +906,7 @@ private:
   RigidBodyElement* Rigid_body_element_pt;
 
   /// Pointer to beam mesh (first arm)
-  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_pt;
+  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_first_arm_pt;
 
   /// Pointer to beam mesh (second arm)
   OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_second_arm_pt;
@@ -1107,7 +1009,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   double U0 = 0.0;
 
   // Beam's inclination
-  double Theta_eq = acos(-1.0) / 6.0;
+  double Theta_eq = 0.0;
 
   // x position of clamped point
   double X0 = 2.0;
@@ -1131,12 +1033,12 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (first arm)
   double length_1 = fabs(q + 0.5);
-  Beam_mesh_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+  Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length_1, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure (first arm)
-  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_pt);
+  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_first_arm_pt);
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
@@ -1147,11 +1049,10 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure (second arm)
-  Rigid_body_element_pt->set_pointer_to_beam_second_arm_mesh(
-    Beam_mesh_second_arm_pt);
+  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_second_arm_pt);
 
   // Build the problem's global mesh
-  add_sub_mesh(Beam_mesh_pt);
+  add_sub_mesh(Beam_mesh_first_arm_pt);
   add_sub_mesh(Beam_mesh_second_arm_pt);
   add_sub_mesh(Rigid_body_element_mesh_pt);
   build_global_mesh();
@@ -1159,33 +1060,33 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   // Set the boundary conditions: One end of the beam is clamped in space
   // Pin displacements in both x and y directions, and pin the derivative of
   // position Vector w.r.t. to coordinates in x direction. (first arm)
-  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(0);
-  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(1);
-  Beam_mesh_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
 
   // Find number of elements in the mesh (first arm)
-  unsigned n_element = Beam_mesh_pt->nelement();
+  unsigned n_element = Beam_mesh_first_arm_pt->nelement();
 
   // Loop over the elements to set physical parameters etc. (first arm)
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
-    HaoHermiteBeamElement* elem_pt =
-      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
+    HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
+      Beam_mesh_first_arm_pt->element_pt(e));
 
     // Pass the pointer of RigidBodyElement to the each element
     // so we can work out the rigid body motion
     elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
-    // select first arm (assign Type=0)
-    elem_pt->select_first_arm();
-
     // Set physical parameters for each element:
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->q_pt() = &Global_Physical_Variables::Q;
 
+    // Note: no rotation!
+
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+
   } // end of loop over elements
 
 
@@ -1210,15 +1111,16 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     // so we can work out the rigid body motion
     elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
-    // select second arm (assign Type=1)
-    elem_pt->select_second_arm();
-
     // Set physical parameters for each element:
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->q_pt() = &Global_Physical_Variables::Q;
 
+    // Rotate by opening angle
+    elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
+
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+
   } // end of loop over elements
 
   // Assign the global and local equation numbers
@@ -1255,7 +1157,7 @@ void ElasticBeamProblem::parameter_study()
   for (unsigned i = 1; i <= nstep; i++)
   {
     // Increment Non-dimensional coefficeient (FSI)
-    Global_Physical_Variables::Q = 1.0e-7 * double(i);
+    Global_Physical_Variables::Q = 0.0 * double(i);
 
     // Solve the system
     newton_solve();
@@ -1263,7 +1165,7 @@ void ElasticBeamProblem::parameter_study()
     // Document the solution (first arm)
     sprintf(filename, "RESLT/beam%i.dat", i);
     file.open(filename);
-    Beam_mesh_pt->output(file, 5);
+    Beam_mesh_first_arm_pt->output(file, 5);
     file.close();
 
     // Document the solution (second arm)
@@ -1289,10 +1191,10 @@ int main()
 
   // The parameter to determine the length of the beam
   // first arm length = |q+0.5|, second arm length = |q-0.5|
-  double q = 0.1;
+  double q = 0.4;
 
   /// Angle between the two arms of the beam
-  Global_Physical_Variables::Alpha = acos(-1.0);
+  Global_Physical_Variables::Alpha = acos(-1.0) / 4.0;
 
   // Construst the problem
   ElasticBeamProblem problem(n_element, q);
