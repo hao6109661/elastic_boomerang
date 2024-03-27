@@ -117,46 +117,75 @@ public:
 
   /// Pass pointer to the Mesh of HaoHermiteBeamElements
   /// and add their unknowns to be external data for this element
-  void set_pointer_to_beam_mesh(SolidMesh* beam_mesh_pt)
+  void set_pointer_to_beam_meshes(const Vector<SolidMesh*>& beam_mesh_pt)
   {
     // Store the pointer for future reference
     Beam_mesh_pt = beam_mesh_pt;
 
-    // Loop over the nodes in the mesh and add them as external Data
+    // Loop over the nodes in the all mesh and add them as external Data
     // because they affect the traction and therefore the total drag
     // and torque on the object.
-    unsigned nnode = beam_mesh_pt->nnode();
-    for (unsigned j = 0; j < nnode; j++)
+    unsigned npointer = beam_mesh_pt.size();
+    for (unsigned i = 0; i < npointer; i++)
     {
-      add_external_data(beam_mesh_pt->node_pt(j)->variable_position_pt());
+      unsigned nnode = beam_mesh_pt[i]->nnode();
+      for (unsigned j = 0; j < nnode; j++)
+      {
+        add_external_data(beam_mesh_pt[i]->node_pt(j)->variable_position_pt());
+      }
     }
   }
 
 
   /// Compute the beam's centre of mass
-  void compute_centre_of_mass(Vector<double>& r_centre);
+  void compute_centre_of_mass(Vector<double>& sum_r_centre);
 
 
-  /// Compute the total drag and torque on the entire beam structure according
+  /// Compute the drag and torque on the entire beam structure according
   /// to slender body theory
-  void compute_drag_and_torque(Vector<double>& total_drag,
-                               double& total_torque);
+  void compute_drag_and_torque(Vector<double>& sum_total_drag,
+                               double& sum_total_torque);
 
 
-  /// Output the total drag and torque on the entire beam structure
+  /// Output the Theta_eq, Theta_eq_orientation (make comparision with paper's
+  /// results), drag and torque on the entire beam structure
   void output(std::ostream& outfile)
   {
-    Vector<double> total_drag(2);
-    double total_torque = 0.0;
+    Vector<double> sum_total_drag(2);
+    double sum_total_torque = 0.0;
 
-    // Compute the total drag and torque on the entire beam structure
-    compute_drag_and_torque(total_drag, total_torque);
+    // Compute the drag and torque on the entire beam structure
+    compute_drag_and_torque(sum_total_drag, sum_total_torque);
 
-    // Output Theta_eq, total drag and torque
-    outfile << internal_data_pt(2)->value(0) << "  ";
-    outfile << total_drag[0] << "  ";
-    outfile << total_drag[1] << "  ";
-    outfile << total_torque << std::endl;
+    // Output Theta_eq
+    double Theta_eq = internal_data_pt(2)->value(0);
+    outfile << fmod(Theta_eq, 2 * acos(-1.0)) << "  ";
+
+    // Make a transformation from Theta_eq to Theta_eq_orientation
+    // Note that Theta_eq_orientation is in the period of Pi
+    double Theta_eq_orientation =
+      fmod(fmod(Theta_eq, 2 * acos(-1.0)) + acos(-1.0) / 2.0, acos(-1.0));
+    if (Theta_eq_orientation > (-acos(-1.0) / 2.0) &&
+        Theta_eq_orientation < (acos(-1.0) / 2.0))
+    {
+      outfile << Theta_eq_orientation << "  ";
+    }
+    else
+    {
+      if (Theta_eq_orientation > 0)
+      {
+        outfile << Theta_eq_orientation - acos(-1.0) << "  ";
+      }
+      else
+      {
+        outfile << Theta_eq_orientation + acos(-1.0) << "  ";
+      }
+    }
+
+    // Output drag and torque on the entire beam structure
+    outfile << sum_total_drag[0] << "  ";
+    outfile << sum_total_drag[1] << "  ";
+    outfile << sum_total_torque << std::endl;
   }
 
 
@@ -165,14 +194,11 @@ protected:
   void fill_in_contribution_to_residuals(Vector<double>& residuals)
   {
     oomph_info << "ndof in element: " << residuals.size() << std::endl;
+
     // Get current total drag and torque
-
-    // hierher only call this function once but but the compute_drag_and_torque
-    // fct should loop both beam meshes!
-
-    Vector<double> total_drag(2);
-    double total_torque = 0.0;
-    compute_drag_and_torque(total_drag, total_torque);
+    Vector<double> sum_total_drag(2);
+    double sum_total_torque = 0.0;
+    compute_drag_and_torque(sum_total_drag, sum_total_torque);
 
     unsigned n_internal = ninternal_data();
     for (unsigned i = 0; i < n_internal; i++)
@@ -188,21 +214,21 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          residuals[eqn_number] = total_drag[0];
+          residuals[eqn_number] = sum_total_drag[0];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::V;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          residuals[eqn_number] = total_drag[1];
+          residuals[eqn_number] = sum_total_drag[1];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::U0;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          residuals[eqn_number] = total_torque;
+          residuals[eqn_number] = sum_total_torque;
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::Theta_eq;
         }
@@ -223,7 +249,7 @@ protected:
 
 private:
   /// Pointer to the Mesh of HaoHermiteBeamElements
-  SolidMesh* Beam_mesh_pt;
+  Vector<SolidMesh*> Beam_mesh_pt;
 };
 
 
@@ -479,7 +505,6 @@ public:
 #endif
 
     // Translate rigid body parameters into meaningful variables
-    // (Type=0: first arm, Type=1: second arm.)
     double V = 0.0;
     double U0 = 0.0;
     double Theta_eq = 0.0;
@@ -544,8 +569,8 @@ public:
     torque = 0.0;
 
     // Compute the beam's positon of centre of mass
-    Vector<double> r_centre(2);
-    Rigid_body_element_pt->compute_centre_of_mass(r_centre);
+    Vector<double> sum_r_centre(2);
+    Rigid_body_element_pt->compute_centre_of_mass(sum_r_centre);
 
     // Local coordinate (1D!)
     Vector<double> s(1);
@@ -607,8 +632,8 @@ public:
              cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
 
       // calculate the contribution to torque
-      double local_torque =
-        (R[0] - r_centre[0]) * traction[1] - (R[1] - r_centre[1]) * traction[0];
+      double local_torque = (R[0] - sum_r_centre[0]) * traction[1] -
+                            (R[1] - sum_r_centre[1]) * traction[0];
 
       // Add 'em
       drag[0] += traction[0] * W;
@@ -706,7 +731,6 @@ public:
       double Y0 = 0.0;
       Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
 
-
       // Note that we're looking for an pseudo "equilibrium position"
       // where the angle (and the traction!) remain constant while
       // the beam still moves as a rigid body!
@@ -788,7 +812,7 @@ private:
 /// Compute the beam's centre of mass (defined outside class to avoid
 /// forward references)
 //=============================================================================
-void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre)
+void RigidBodyElement::compute_centre_of_mass(Vector<double>& sum_r_centre)
 {
 #ifdef PARANOID
   if (r_centre.size() != 2)
@@ -802,36 +826,53 @@ void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre)
   }
 #endif
 
-  // Find number of elements in the mesh
-  unsigned n_element = Beam_mesh_pt->nelement();
-
+  // Initialise
+  sum_r_centre[0] = 0.0;
+  sum_r_centre[1] = 0.0;
   Vector<double> int_r(2);
   double length = 0.0;
-  Vector<double> total_int_r(2);
-  double total_length = 0.0;
 
-  // Loop over the elements to compute the sum of elements' contribution to
-  // the (\int r ds) and the length of beam
-  for (unsigned e = 0; e < n_element; e++)
+  // Find number of beam meshes
+  unsigned npointer = Beam_mesh_pt.size();
+
+  // Loop over the beam meshes to compute the centre of mass of the entire beam
+  for (unsigned i = 0; i < npointer; i++)
   {
-    // Upcast to the specific element type
+    // Initialise
+    Vector<double> total_int_r(2);
+    double total_length = 0.0;
 
-    HaoHermiteBeamElement* elem_pt =
-      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
+    // Find number of elements in the mesh
+    unsigned n_element = Beam_mesh_pt[i]->nelement();
 
-    // Compute contribution to the the (\int r ds) and length of beam within
-    // the e-th element
-    elem_pt->compute_contribution_to_int_r_and_length(int_r, length);
+    // Loop over the elements to compute the sum of elements' contribution to
+    // the (\int r ds) and the length of beam
+    for (unsigned e = 0; e < n_element; e++)
+    {
+      // Upcast to the specific element type
+      HaoHermiteBeamElement* elem_pt =
+        dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt[i]->element_pt(e));
 
-    // Sum the elements' contribution to the (\int r ds) and length of beam
-    total_int_r[0] += int_r[0];
-    total_int_r[1] += int_r[1];
-    total_length += length;
-  } // end of loop over elements
+      // Compute contribution to the the (\int r ds) and length of beam within
+      // the e-th element
+      elem_pt->compute_contribution_to_int_r_and_length(int_r, length);
 
-  // assemble the (\int r ds) and beam length to get the centre of mass
-  r_centre[0] = (1.0 / total_length) * total_int_r[0];
-  r_centre[1] = (1.0 / total_length) * total_int_r[1];
+      // Sum the elements' contribution to the (\int r ds) and length of beam
+      total_int_r[0] += int_r[0];
+      total_int_r[1] += int_r[1];
+      total_length += length;
+    } // end of loop over elements
+
+    // Assemble the (\int r ds) and beam length to get the centre of mass for
+    // one arm
+    Vector<double> r_centre(2);
+    r_centre[0] = (1.0 / total_length) * total_int_r[0];
+    r_centre[1] = (1.0 / total_length) * total_int_r[1];
+
+    // Compute the centre of mass of the entire beam
+    sum_r_centre[0] = sum_r_centre[0] + r_centre[0];
+    sum_r_centre[1] = sum_r_centre[1] + r_centre[1];
+  }
 }
 
 
@@ -839,8 +880,8 @@ void RigidBodyElement::compute_centre_of_mass(Vector<double>& r_centre)
 /// Compute the drag and torque on the entire beam structure according to
 /// slender body theory (Type=0: first arm, Type=1: second arm.)
 //=============================================================================
-void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
-                                               double& total_torque)
+void RigidBodyElement::compute_drag_and_torque(Vector<double>& sum_total_drag,
+                                               double& sum_total_torque)
 {
 #ifdef PARANOID
   if (total_drag.size() != 2)
@@ -854,28 +895,49 @@ void RigidBodyElement::compute_drag_and_torque(Vector<double>& total_drag,
   }
 #endif
 
-  // Find number of elements in the mesh
-  unsigned n_element = Beam_mesh_pt->nelement();
+  // Initialise
+  sum_total_drag[0] = 0.0;
+  sum_total_drag[1] = 0.0;
+  sum_total_torque = 0.0;
 
   Vector<double> drag(2);
   double torque = 0.0;
 
-  // Loop over the elements to compute the sum of elements' contribution to
-  // the drag and torque on the entire beam structure
-  for (unsigned e = 0; e < n_element; e++)
+  // Find number of beam meshes
+  unsigned npointer = Beam_mesh_pt.size();
+
+  // Loop over the beam meshes to compute the drag and torque of the entire beam
+  for (unsigned i = 0; i < npointer; i++)
   {
-    // Upcast to the specific element type
-    HaoHermiteBeamElement* elem_pt =
-      dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt->element_pt(e));
+    // Initialise
+    Vector<double> total_drag(2);
+    double total_torque = 0.0;
 
-    // Compute contribution to the drag and torque within the e-th element
-    elem_pt->compute_contribution_to_drag_and_torque(drag, torque);
+    // Find number of elements in the mesh
+    unsigned n_element = Beam_mesh_pt[i]->nelement();
 
-    // Sum the elements' contribution to the drag and torque
-    total_drag[0] += drag[0];
-    total_drag[1] += drag[1];
-    total_torque += torque;
-  } // end of loop over elements
+    // Loop over the elements to compute the sum of elements' contribution to
+    // the drag and torque on the entire beam structure
+    for (unsigned e = 0; e < n_element; e++)
+    {
+      // Upcast to the specific element type
+      HaoHermiteBeamElement* elem_pt =
+        dynamic_cast<HaoHermiteBeamElement*>(Beam_mesh_pt[i]->element_pt(e));
+
+      // Compute contribution to the drag and torque within the e-th element
+      elem_pt->compute_contribution_to_drag_and_torque(drag, torque);
+
+      // Sum the elements' contribution to the drag and torque
+      total_drag[0] += drag[0];
+      total_drag[1] += drag[1];
+      total_torque += torque;
+    } // end of loop over elements
+
+    // Compute the drag and torque of the entire beam
+    sum_total_drag[0] = sum_total_drag[0] + total_drag[0];
+    sum_total_drag[1] = sum_total_drag[1] + total_drag[1];
+    sum_total_torque = sum_total_torque + total_torque;
+  }
 }
 
 
@@ -1012,10 +1074,10 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   double Theta_eq = 0.0;
 
   // x position of clamped point
-  double X0 = 2.0;
+  double X0 = 0.0;
 
   // y position of clamped point
-  double Y0 = 2.5;
+  double Y0 = 0.0;
 
   // Make the RigidBodyElement that stores the parameters for the rigid body
   // motion
@@ -1036,10 +1098,6 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length_1, Undef_beam_pt);
 
-  // Pass the pointer of the mesh to the RigidBodyElement class
-  // so it can work out the drag and torque on the entire structure (first arm)
-  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_first_arm_pt);
-
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (second arm)
@@ -1048,8 +1106,11 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
     n_elem, length_2, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
-  // so it can work out the drag and torque on the entire structure (second arm)
-  Rigid_body_element_pt->set_pointer_to_beam_mesh(Beam_mesh_second_arm_pt);
+  // so it can work out the drag and torque on the entire structure
+  Vector<SolidMesh*> Beam_mesh_pt(2);
+  Beam_mesh_pt[0] = Beam_mesh_first_arm_pt;
+  Beam_mesh_pt[1] = Beam_mesh_second_arm_pt;
+  Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
 
   // Build the problem's global mesh
   add_sub_mesh(Beam_mesh_first_arm_pt);
@@ -1148,22 +1209,23 @@ void ElasticBeamProblem::parameter_study()
   // Output file stream used for writing results
   ofstream file;
   ofstream file2;
+  ofstream file3;
 
   // String used for the filename
   char filename[100];
 
   // Loop over parameter increments
-  unsigned nstep = 1;
-  for (unsigned i = 1; i <= nstep; i++)
+  unsigned nstep = 10;
+  for (unsigned i = 0; i <= nstep; i++)
   {
     // Increment Non-dimensional coefficeient (FSI)
-    Global_Physical_Variables::Q = 0.0 * double(i);
+    Global_Physical_Variables::Q = 1.0e-4 * double(i);
 
     // Solve the system
     newton_solve();
 
     // Document the solution (first arm)
-    sprintf(filename, "RESLT/beam%i.dat", i);
+    sprintf(filename, "RESLT/beam_first_arm%i.dat", i);
     file.open(filename);
     Beam_mesh_first_arm_pt->output(file, 5);
     file.close();
@@ -1173,6 +1235,12 @@ void ElasticBeamProblem::parameter_study()
     file2.open(filename);
     Beam_mesh_second_arm_pt->output(file2, 5);
     file2.close();
+
+    // Document the solution of Theta_eq, Theta_eq_orientation, drag and torque
+    sprintf(filename, "RESLT/beam_theta_eq%i.dat", i);
+    file3.open(filename);
+    Rigid_body_element_pt->output(file3);
+    file3.close();
   }
 
 } // end of parameter study
