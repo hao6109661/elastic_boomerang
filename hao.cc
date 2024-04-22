@@ -47,6 +47,24 @@ namespace Global_Physical_Variables
   /// Angle between the two arms of the beam
   double Alpha = 0.0;
 
+
+  // These are parameters that can be set from the command line:
+  
+  /// Aspect ratio: Don't change this on the fly; should only be assigned
+  /// once before the mesh is generated
+  /// first arm length = |q+0.5|, second arm length = |q-0.5|
+  double Q=0.4;
+
+  /// Max. value of FSI parameter
+  double I_max=1.0e-3;
+ 
+  /// Default increment for FSI parameter
+  double I_increment_default=1.0e-5;
+
+  /// Initial value for theta_eq in the Newton solve
+  double Initial_value_for_theta_eq=0.0;
+
+
 } // namespace Global_Physical_Variables
 
 
@@ -62,15 +80,12 @@ class RigidBodyElement : public GeneralisedElement
 {
 public:
   /// Constructor: Pass initial values for rigid body parameters (pinned
-  /// by default) and initialize the value for first Theta_eq
-  /// Here, initialization sets Deflation=0, meaning that by default, deflation
-  /// method is off. When Deflation=1, it implies the adoption of method
+  /// by default)
   RigidBodyElement(const double& V,
                    const double& U0,
                    const double& Theta_eq,
                    const double& X0,
                    const double& Y0)
-    : Sol_theta_eq(0.0), Deflation(0)
   {
     // Create internal data which contains the "rigid body" parameters
     for (unsigned i = 0; i < 5; i++)
@@ -150,27 +165,6 @@ public:
                                double& sum_total_torque);
 
 
-  /// Apply the deflation method.
-  void deflation_method()
-  {
-    Deflation = 1;
-    Sol_theta_eq = internal_data_pt(2)->value(0);
-
-    // Initialize a new value for Theta_eq so that avoids the denominator in
-    // residuals being 0
-    internal_data_pt(2)->set_value(0, Sol_theta_eq + 0.01);
-  }
-
-
-  void clear_deflation_method()
-  {
-    Deflation = 0;
-
-    // Reassign the previous solution as the initial value for Newton's method
-    internal_data_pt(2)->set_value(0, Sol_theta_eq);
-  }
-
-
   /// Output the Theta_eq, Theta_eq_orientation (make comparision with paper's
   /// results), drag and torque on the entire beam structure
   void output(std::ostream& outfile)
@@ -205,29 +199,18 @@ public:
         outfile << Theta_eq_orientation + acos(-1.0) << "  ";
       }
     }
-    if (Deflation == 1)
-    {
-      outfile << std::endl;
-    }
-  }
 
+    // Output drag and torque on the entire beam structure
+    outfile << sum_total_drag[0] << "  ";
+    outfile << sum_total_drag[1] << "  ";
+    outfile << sum_total_torque << "  ";
+  }
 
 protected:
   // Fill in contribution to residuals
   void fill_in_contribution_to_residuals(Vector<double>& residuals)
   {
-    double denominator = 0.0;
-    if (Deflation == 0)
-    {
-      denominator = 1.0;
-    }
-    else
-    {
-      denominator =
-        sin(2.0 * (internal_data_pt(2)->value(0))) - sin(2.0 * Sol_theta_eq);
-    }
-
-    oomph_info << "ndof in element: " << residuals.size() << std::endl;
+    // oomph_info << "ndof in element: " << residuals.size() << std::endl;
 
     // Get current total drag and torque
     Vector<double> sum_total_drag(2);
@@ -248,21 +231,21 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          residuals[eqn_number] = sum_total_drag[0] / denominator;
+          residuals[eqn_number] = sum_total_drag[0];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::V;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          residuals[eqn_number] = sum_total_drag[1] / denominator;
+          residuals[eqn_number] = sum_total_drag[1];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::U0;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          residuals[eqn_number] = sum_total_torque / denominator;
+          residuals[eqn_number] = sum_total_torque;
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::Theta_eq;
         }
@@ -272,11 +255,11 @@ protected:
           abort();
         }
 
-        std::cout << "internal data " << i << " is not pinned\n";
+        // std::cout << "internal data " << i << " is not pinned\n";
       }
       else
       {
-        std::cout << "internal data " << i << " is pinned\n";
+        // std::cout << "internal data " << i << " is pinned\n";
       }
     }
   }
@@ -284,14 +267,6 @@ protected:
 private:
   /// Pointer to the Mesh of HaoHermiteBeamElements
   Vector<SolidMesh*> Beam_mesh_pt;
-
-  /// First solution of Theta_eq for a setup of q and alpha
-  double Sol_theta_eq;
-
-  /// The toggle variable for the deflation method
-  /// Initialization sets Deflation=0, meaning that by default, deflation method
-  /// is off. When Deflation=1, it implies the adoption of method
-  unsigned Deflation;
 };
 
 
@@ -570,7 +545,7 @@ public:
 
   // overloaded load_vector to apply the computed traction_0 (i.e. the
   // traction acting on the beam before its rigid body motion is applied)
-  // including the non-dimensional coefficient Q (FSI)
+  // including the non-dimensional coefficient I (FSI)
   void load_vector(const unsigned& intpt,
                    const Vector<double>& xi,
                    const Vector<double>& x,
@@ -828,6 +803,9 @@ public:
       {
         outfile << traction[i] << " ";
       }
+
+      // Output the velocity of the background
+      outfile << R[1] << "  " << 0;
       outfile << std::endl;
     }
   }
@@ -991,10 +969,10 @@ class ElasticBeamProblem : public Problem
 public:
   /// Constructor: The arguments are the number of elements and the parameter to
   /// determine the length of the beam
-  ElasticBeamProblem(const unsigned& n_elem, const double& q);
+  ElasticBeamProblem(const unsigned& n_elem);
 
   /// Conduct a parameter study
-  void parameter_study(std::ostream& file);
+  void parameter_study();
 
   /// No actions need to be performed after a solve
   void actions_after_newton_solve() {}
@@ -1104,26 +1082,26 @@ public:
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
 //======================================================================
-ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
+ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
 {
   // Drift speed and acceleration of horizontal motion
-  double V = 0.0;
+  double v = 0.0;
 
   // Speed of horizontal motion
-  double U0 = 0.0;
+  double u0 = 0.0;
 
   // Beam's inclination
-  double Theta_eq = 0.0;
+  double theta_eq = Global_Physical_Variables::Initial_value_for_theta_eq;
 
   // x position of clamped point
-  double X0 = 0.0;
+  double x0 = 0.0;
 
   // y position of clamped point
-  double Y0 = 0.0;
+  double y0 = 0.0;
 
   // Make the RigidBodyElement that stores the parameters for the rigid body
   // motion
-  Rigid_body_element_pt = new RigidBodyElement(V, U0, Theta_eq, X0, Y0);
+  Rigid_body_element_pt = new RigidBodyElement(v, u0, theta_eq, x0, y0);
 
   // Add the rigid body element to its own mesh
   Rigid_body_element_mesh_pt = new Mesh;
@@ -1133,17 +1111,21 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
   // before applying the rigid body motion)
   Undef_beam_pt = new StraightLineVertical();
 
+  // Aspect ratio to determine the length of the beam
+  // first arm length = |q+0.5|, second arm length = |q-0.5|
+  double* q_pt = &Global_Physical_Variables::Q;
+
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (first arm)
-  double length_1 = fabs(q + 0.5);
+  double length_1 = fabs(*q_pt + 0.5);
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length_1, Undef_beam_pt);
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (second arm)
-  double length_2 = fabs(q - 0.5);
+  double length_2 = fabs(*q_pt - 0.5);
   Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem, length_2, Undef_beam_pt);
 
@@ -1235,88 +1217,12 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem, const double& q)
 //=======start_of_parameter_study==========================================
 /// Solver loop to perform parameter study
 //=========================================================================
-void ElasticBeamProblem::parameter_study(std::ostream& file)
+void ElasticBeamProblem::parameter_study()
 {
   // Over-ride the default maximum value for the residuals
-  Problem::Max_residuals = 1.0e10;
-  Problem::Max_newton_iterations = 100;
-  // Problem::Newton_solver_tolerance = 1.0e-8;
-
-
-  // Actually, this loop just runs once, but since this is the computation part,
-  // we still keep it here
-  unsigned nstep = 1;
-  for (unsigned i = 1; i <= nstep; i++)
-  {
-    try
-    {
-      // Solve the system
-      newton_solve();
-    }
-    catch (...)
-    {
-      // If the newton method cannot converge, ignore the following section of
-      // the loop
-      file << "#"
-           << "  "
-           << "#"
-           << "  "
-           << "#"
-           << "  "
-           << "#"
-           << "  "
-           << "#"
-           << "  "
-           << "#" << std::endl;
-      continue;
-    }
-
-    // Document the I, q, Alpha and solution of Theta_eq, Theta_eq_orientation
-    Rigid_body_element_pt->output(file);
-
-    // Using the deflation method, try to find the second solution of Theta_eq
-    Rigid_body_element_pt->deflation_method();
-
-    // Problem::Newton_solver_tolerance = 1.0e-4;
-    try
-    {
-      // Solve the system
-      newton_solve();
-    }
-    catch (...)
-    {
-      // If the newton method cannot converge, ignore the following section of
-      // the loop
-      file << "#"
-           << "  "
-           << "#" << std::endl;
-
-      // Close the deflation method
-      Rigid_body_element_pt->clear_deflation_method();
-
-      continue;
-    }
-
-    // Document the second solution of Theta_eq, Theta_eq_orientation
-    Rigid_body_element_pt->output(file);
-
-    // Close the deflation method
-    Rigid_body_element_pt->clear_deflation_method();
-  }
-
-} // end of parameter study
-
-//========start_of_main================================================
-/// Driver for beam (string under tension) test problem
-//=====================================================================
-int main()
-{
-  // Set the non-dimensional thickness
-  Global_Physical_Variables::H = 0.01;
-
-  // Number of elements (choose an even number if you want the control point
-  // to be located at the centre of the beam)
-  unsigned n_element = 10;
+  // Problem::Max_residuals = 1.0e10;
+  // Problem::Max_newton_iterations = 20;
+  Problem::Always_take_one_newton_step = true;
 
   // Create label for output
   DocInfo doc_info;
@@ -1325,59 +1231,226 @@ int main()
   // directory exists and issues a warning if it doesn't.
   doc_info.set_directory("RESLT");
 
-  // Loop over different values for Non-dimensional coefficeient (FSI) I from 0
-  // to 1.0e-3
-  for (unsigned k = 0; k <= 20; k++)
+  // unsigned nalpha = 50;
+  //  Loop over different values for Alpha from 0.02pi to 0.98pi
+  // for (unsigned i = 1; i < nalpha; i++)
+  //{
+  // Global_Physical_Variables::Alpha = (acos(-1.0) / double(nalpha)) *
+  // double(i);
+  //Global_Physical_Variables::Alpha = acos(-1.0) * 0.25;
+
+  // Output file stream used for writing results
+  ofstream file;
+
+  // String used for the filename
+  char filename[100];
+
+  // Write the file name
+  sprintf(filename, "RESLT/elastic_beam_I_theta_q_%.2f_alpha_%.3fpi_initial_%.2f.dat",Global_Physical_Variables::Q,Global_Physical_Variables::Alpha/acos(-1.0),Global_Physical_Variables::Initial_value_for_theta_eq);
+  file.open(filename);
+
+  // Counter to record the iterations for the while loop
+  unsigned counter = 0;
+
+  // Initialize the value of backup for dofs
+  DoubleVector dofs_backup;
+
+  // Loop over different values for Non-dimensional coefficeient (FSI) I from
+  // 0 to I_max
+  // Assign the default value to I_increment
+  double I_increment = Global_Physical_Variables::I_increment_default;
+  while (Global_Physical_Variables::I <= Global_Physical_Variables::I_max)
   {
-    Global_Physical_Variables::I = ((1.0e-3) / 20.0) * double(k);
+    // Get the dofs
+    Problem::get_dofs(dofs_backup);
 
-    // Output file stream used for writing results
-    ofstream file;
-
-    // String used for the filename
-    char filename[100];
-
-    // Write the file name
-    sprintf(filename, "RESLT/beam_contour_theta_eq%d.dat", k);
-    file.open(filename);
-
-    // Loop over different values for Alpha from 0.02pi to 0.98pi
-    for (unsigned i = 1; i < 50; i++)
+    try
     {
-      Global_Physical_Variables::Alpha = (acos(-1.0) / 50.0) * double(i);
+      // Solve the system
+      newton_solve();
 
-      // Loop over different values for q from 0.01 to 0.49
-      for (unsigned j = 0; j < 50; j++)
+      // Document I
+      file << Global_Physical_Variables::I << "  ";
+
+      // Document the solution of Theta_eq, Theta_eq_orientation
+      Rigid_body_element_pt->output(file);
+
+      // Document maximum residuals at start and after each newton iteration
+      file << Problem::Max_res[0] << "  ";
+
+      // Document actual number of Newton iterations taken during the most
+      // recent iteration
+      file << Problem::Nnewton_iter_taken << std::endl;
+
+      // Since the Newton method is converged, I_increment is still the default one
+      // without decreasing the size
+      I_increment = Global_Physical_Variables::I_increment_default;
+
+      // Compute the next value for I
+      Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
+
+      // Output file stream used for writing results
+      ofstream file1;
+      ofstream file2;
+      ofstream file3;
+
+      // Document the solution (first arm)
+      sprintf(filename, "RESLT/beam_first_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+      file1.open(filename);
+      Beam_mesh_first_arm_pt->output(file1, 5);
+      file1.close();
+
+      // Document the solution (second arm)
+      sprintf(filename, "RESLT/beam_second_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+      file2.open(filename);
+      Beam_mesh_second_arm_pt->output(file2, 5);
+      file2.close();
+
+      counter = counter + 1;
+    }
+    catch (...)
+    {
+      // Check whether I=0 or not, because I=0 is the starting point (it is not
+      // produced by previous point)
+      if (fabs(Global_Physical_Variables::I) > 1.0e-12)
       {
-        // The parameter to determine the length of the beam
-        // first arm length = |q+0.5|, second arm length = |q-0.5|
-        double q = (double(j) / 50.0) * 0.5;
-
-        // Output I, q and Alpha
-        file << Global_Physical_Variables::I << "  " << q << "  "
-             << Global_Physical_Variables::Alpha << "  ";
-
-        // Construst the problem
-        ElasticBeamProblem problem(n_element, q);
-
-        // Check that we're ready to go:
-        cout << "\n\n\nProblem self-test ";
-        if (problem.self_test() == 0)
+        // Check the size of I_increment / 2.0 to make sure I_increment is not too small
+        if (I_increment / 2.0 > 1.0e-8)
         {
-          cout << "passed: Problem can be solved." << std::endl;
+          // Back to the original value of I because the previous I_increment is too
+          // large
+          Global_Physical_Variables::I = Global_Physical_Variables::I - I_increment;
+
+          // Half the parameter increment 
+          I_increment = I_increment / 2.0;
+
+          // Compute the new value of I
+          Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
         }
         else
         {
-          throw OomphLibError("Self test failed",
-                              OOMPH_CURRENT_FUNCTION,
-                              OOMPH_EXCEPTION_LOCATION);
+          break;
         }
-
-        // Conduct parameter study
-        problem.parameter_study(file);
       }
+      else
+      { // Since I=0 is the starting point (it is not produced by the previous
+        // point), there is no need to consider the previous point
+
+        // Document I
+        file << Global_Physical_Variables::I << "  ";
+
+        // Document empty file
+        file << "#"
+             << "  "
+             << "#"
+             << "  "
+             << "#"
+             << "  "
+             << "#"
+             << "  "
+             << "#"
+             << "  "
+             << "#"
+             << "  "
+             << "#" << std::endl;
+
+        // Compute the new value for I
+        Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
+
+        // Output file stream used for writing results
+        ofstream file1;
+        ofstream file2;
+        ofstream file3;
+
+        // Document the empty file (first arm)
+        sprintf(filename, "RESLT/beam_first_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+        file1.open(filename);
+        file1.close();
+
+        // Document the empty file (second arm)
+        sprintf(filename, "RESLT/beam_second_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+        file2.open(filename);
+        file2.close();
+
+        counter = counter + 1;
+      }
+      // Reset the dofs
+      Problem::set_dofs(dofs_backup);
     }
-    file.close();
   }
+  file.close();
+
+
+} // end of parameter study
+
+//========start_of_main================================================
+/// Driver for beam (string under tension) test problem
+//=====================================================================
+int main(int argc, char **argv)
+{
+  // Store command line arguments
+  CommandLineArgs::setup(argc,argv);
+
+  // Aspect ratio
+  CommandLineArgs::specify_command_line_flag("--q",
+					     &Global_Physical_Variables::Q);
+ 
+  // Max. value of FSI parameter
+  CommandLineArgs::specify_command_line_flag("--I_max",
+					     &Global_Physical_Variables::I_max);
+ 
+  // Increment for FSI parameter
+  CommandLineArgs::specify_command_line_flag("--I_increment_default",
+		    &Global_Physical_Variables::I_increment_default);
+ 
+  // Opening angle in degrees
+  double alpha_in_degrees=45.0;
+  CommandLineArgs::specify_command_line_flag("--alpha_in_degrees",
+					     &alpha_in_degrees);
+
+  // Initial value for theta_eq in the Newton solve
+  CommandLineArgs::specify_command_line_flag("--Initial_value_for_theta_eq",
+		    &Global_Physical_Variables::Initial_value_for_theta_eq);
+ 
+ // Parse command line
+ CommandLineArgs::parse_and_assign(); 
+ 
+ // Doc what has actually been specified on the command line
+ CommandLineArgs::doc_specified_flags();
+
+ // Now that we've read the opening angle in degrees, update the value in
+ // radians
+ Global_Physical_Variables::Alpha=4.0*atan(1.0)/180.0*alpha_in_degrees;
+ 
+  // Set the non-dimensional thickness
+  Global_Physical_Variables::H = 0.01;
+
+  // Number of elements (choose an even number if you want the control point
+  // to be located at the centre of the beam)
+  unsigned n_element = 10;
+
+  //  Aspect ratio to determine the length of the beam
+  //  first arm length = |q+0.5|, second arm length = |q-0.5|
+  //double q = 0.35;
+
+//hierher fix this! This must use the version from the namespace
+
+  // Construct the problem
+  ElasticBeamProblem problem(n_element);
+
+  // Check that we're ready to go:
+  cout << "\n\n\nProblem self-test ";
+  if (problem.self_test() == 0)
+  {
+    cout << "passed: Problem can be solved." << std::endl;
+  }
+  else
+  {
+    throw OomphLibError(
+      "Self test failed", OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
+  }
+
+  // Conduct parameter study
+  problem.parameter_study();
 
 } // end of main
