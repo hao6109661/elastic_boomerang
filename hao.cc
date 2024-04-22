@@ -49,20 +49,20 @@ namespace Global_Physical_Variables
 
 
   // These are parameters that can be set from the command line:
-  
+
   /// Aspect ratio: Don't change this on the fly; should only be assigned
   /// once before the mesh is generated
   /// first arm length = |q+0.5|, second arm length = |q-0.5|
-  double Q=0.4;
+  double Q = 0.4;
 
   /// Max. value of FSI parameter
-  double I_max=1.0e-3;
- 
+  double I_max = 1.0e-3;
+
   /// Default increment for FSI parameter
-  double I_increment_default=1.0e-5;
+  double I_increment_default = 1.0e-5;
 
   /// Initial value for theta_eq in the Newton solve
-  double Initial_value_for_theta_eq=0.0;
+  double Initial_value_for_theta_eq = 0.0;
 
 
 } // namespace Global_Physical_Variables
@@ -1237,7 +1237,7 @@ void ElasticBeamProblem::parameter_study()
   //{
   // Global_Physical_Variables::Alpha = (acos(-1.0) / double(nalpha)) *
   // double(i);
-  //Global_Physical_Variables::Alpha = acos(-1.0) * 0.25;
+  // Global_Physical_Variables::Alpha = acos(-1.0) * 0.25;
 
   // Output file stream used for writing results
   ofstream file;
@@ -1246,7 +1246,11 @@ void ElasticBeamProblem::parameter_study()
   char filename[100];
 
   // Write the file name
-  sprintf(filename, "RESLT/elastic_beam_I_theta_q_%.2f_alpha_%.3fpi_initial_%.2f.dat",Global_Physical_Variables::Q,Global_Physical_Variables::Alpha/acos(-1.0),Global_Physical_Variables::Initial_value_for_theta_eq);
+  sprintf(filename,
+          "RESLT/elastic_beam_I_theta_q_%.2f_alpha_%.3fpi_initial_%.2f.dat",
+          Global_Physical_Variables::Q,
+          Global_Physical_Variables::Alpha / acos(-1.0),
+          Global_Physical_Variables::Initial_value_for_theta_eq);
   file.open(filename);
 
   // Counter to record the iterations for the while loop
@@ -1282,8 +1286,8 @@ void ElasticBeamProblem::parameter_study()
       // recent iteration
       file << Problem::Nnewton_iter_taken << std::endl;
 
-      // Since the Newton method is converged, I_increment is still the default one
-      // without decreasing the size
+      // Since the Newton method is converged, I_increment is still the default
+      // one without decreasing the size
       I_increment = Global_Physical_Variables::I_increment_default;
 
       // Compute the next value for I
@@ -1295,13 +1299,19 @@ void ElasticBeamProblem::parameter_study()
       ofstream file3;
 
       // Document the solution (first arm)
-      sprintf(filename, "RESLT/beam_first_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+      sprintf(filename,
+              "RESLT/beam_first_arm_initial_%.2f_%d.dat",
+              Global_Physical_Variables::Initial_value_for_theta_eq,
+              counter);
       file1.open(filename);
       Beam_mesh_first_arm_pt->output(file1, 5);
       file1.close();
 
       // Document the solution (second arm)
-      sprintf(filename, "RESLT/beam_second_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+      sprintf(filename,
+              "RESLT/beam_second_arm_initial_%.2f_%d.dat",
+              Global_Physical_Variables::Initial_value_for_theta_eq,
+              counter);
       file2.open(filename);
       Beam_mesh_second_arm_pt->output(file2, 5);
       file2.close();
@@ -1314,18 +1324,21 @@ void ElasticBeamProblem::parameter_study()
       // produced by previous point)
       if (fabs(Global_Physical_Variables::I) > 1.0e-12)
       {
-        // Check the size of I_increment / 2.0 to make sure I_increment is not too small
+        // Check the size of I_increment / 2.0 to make sure I_increment is not
+        // too small
         if (I_increment / 2.0 > 1.0e-8)
         {
-          // Back to the original value of I because the previous I_increment is too
-          // large
-          Global_Physical_Variables::I = Global_Physical_Variables::I - I_increment;
+          // Back to the original value of I because the previous I_increment is
+          // too large
+          Global_Physical_Variables::I =
+            Global_Physical_Variables::I - I_increment;
 
-          // Half the parameter increment 
+          // Half the parameter increment
           I_increment = I_increment / 2.0;
 
           // Compute the new value of I
-          Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
+          Global_Physical_Variables::I =
+            Global_Physical_Variables::I + I_increment;
         }
         else
         {
@@ -1355,7 +1368,8 @@ void ElasticBeamProblem::parameter_study()
              << "#" << std::endl;
 
         // Compute the new value for I
-        Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
+        Global_Physical_Variables::I =
+          Global_Physical_Variables::I + I_increment;
 
         // Output file stream used for writing results
         ofstream file1;
@@ -1363,12 +1377,18 @@ void ElasticBeamProblem::parameter_study()
         ofstream file3;
 
         // Document the empty file (first arm)
-        sprintf(filename, "RESLT/beam_first_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+        sprintf(filename,
+                "RESLT/beam_first_arm_initial_%.2f_%d.dat",
+                Global_Physical_Variables::Initial_value_for_theta_eq,
+                counter);
         file1.open(filename);
         file1.close();
 
         // Document the empty file (second arm)
-        sprintf(filename, "RESLT/beam_second_arm_initial_%.2f_%d.dat", Global_Physical_Variables::Initial_value_for_theta_eq,counter);
+        sprintf(filename,
+                "RESLT/beam_second_arm_initial_%.2f_%d.dat",
+                Global_Physical_Variables::Initial_value_for_theta_eq,
+                counter);
         file2.open(filename);
         file2.close();
 
@@ -1386,42 +1406,43 @@ void ElasticBeamProblem::parameter_study()
 //========start_of_main================================================
 /// Driver for beam (string under tension) test problem
 //=====================================================================
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
   // Store command line arguments
-  CommandLineArgs::setup(argc,argv);
+  CommandLineArgs::setup(argc, argv);
 
   // Aspect ratio
   CommandLineArgs::specify_command_line_flag("--q",
-					     &Global_Physical_Variables::Q);
- 
+                                             &Global_Physical_Variables::Q);
+
   // Max. value of FSI parameter
   CommandLineArgs::specify_command_line_flag("--I_max",
-					     &Global_Physical_Variables::I_max);
- 
+                                             &Global_Physical_Variables::I_max);
+
   // Increment for FSI parameter
-  CommandLineArgs::specify_command_line_flag("--I_increment_default",
-		    &Global_Physical_Variables::I_increment_default);
- 
+  CommandLineArgs::specify_command_line_flag(
+    "--I_increment_default", &Global_Physical_Variables::I_increment_default);
+
   // Opening angle in degrees
-  double alpha_in_degrees=45.0;
+  double alpha_in_degrees = 45.0;
   CommandLineArgs::specify_command_line_flag("--alpha_in_degrees",
-					     &alpha_in_degrees);
+                                             &alpha_in_degrees);
 
   // Initial value for theta_eq in the Newton solve
-  CommandLineArgs::specify_command_line_flag("--Initial_value_for_theta_eq",
-		    &Global_Physical_Variables::Initial_value_for_theta_eq);
- 
- // Parse command line
- CommandLineArgs::parse_and_assign(); 
- 
- // Doc what has actually been specified on the command line
- CommandLineArgs::doc_specified_flags();
+  CommandLineArgs::specify_command_line_flag(
+    "--Initial_value_for_theta_eq",
+    &Global_Physical_Variables::Initial_value_for_theta_eq);
 
- // Now that we've read the opening angle in degrees, update the value in
- // radians
- Global_Physical_Variables::Alpha=4.0*atan(1.0)/180.0*alpha_in_degrees;
- 
+  // Parse command line
+  CommandLineArgs::parse_and_assign();
+
+  // Doc what has actually been specified on the command line
+  CommandLineArgs::doc_specified_flags();
+
+  // Now that we've read the opening angle in degrees, update the value in
+  // radians
+  Global_Physical_Variables::Alpha = 4.0 * atan(1.0) / 180.0 * alpha_in_degrees;
+
   // Set the non-dimensional thickness
   Global_Physical_Variables::H = 0.01;
 
@@ -1431,9 +1452,9 @@ int main(int argc, char **argv)
 
   //  Aspect ratio to determine the length of the beam
   //  first arm length = |q+0.5|, second arm length = |q-0.5|
-  //double q = 0.35;
+  // double q = 0.35;
 
-//hierher fix this! This must use the version from the namespace
+  // hierher fix this! This must use the version from the namespace
 
   // Construct the problem
   ElasticBeamProblem problem(n_element);
