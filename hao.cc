@@ -1261,10 +1261,31 @@ void ElasticBeamProblem::parameter_study()
 
   // Loop over different values for Non-dimensional coefficeient (FSI) I from
   // 0 to I_max
+  // If I_max is too large, it cases I_increment might be not small enough
+  // In the interval from 0 to 0.1, use 1.0e-5 as the standard increment. After
+  // surpassing 0.1, revert to using the default increment value,
+  // I_increment_default.
+  double standard_I_increment = 0.0;
+  if (Global_Physical_Variables::I_max > 0.1)
+  {
+    standard_I_increment = 1.0e-4;
+  }
+  else
+  {
+    standard_I_increment = Global_Physical_Variables::I_increment_default;
+  }
   // Assign the default value to I_increment
-  double I_increment = Global_Physical_Variables::I_increment_default;
+  double I_increment = standard_I_increment;
   while (Global_Physical_Variables::I <= Global_Physical_Variables::I_max)
   {
+    // After surpassing 0.1, revert to using the default increment value,
+    // I_increment_default.
+    if (Global_Physical_Variables::I_max > 0.1 &&
+        Global_Physical_Variables::I > 0.1)
+    {
+      standard_I_increment = Global_Physical_Variables::I_increment_default;
+    }
+
     // Get the dofs
     Problem::get_dofs(dofs_backup);
 
@@ -1288,7 +1309,7 @@ void ElasticBeamProblem::parameter_study()
 
       // Since the Newton method is converged, I_increment is still the default
       // one without decreasing the size
-      I_increment = Global_Physical_Variables::I_increment_default;
+      I_increment = standard_I_increment;
 
       // Compute the next value for I
       Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
