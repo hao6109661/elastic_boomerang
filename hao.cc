@@ -180,25 +180,11 @@ public:
     outfile << fmod(Theta_eq, 2 * acos(-1.0)) << "  ";
 
     // Make a transformation from Theta_eq to Theta_eq_orientation
-    // Note that Theta_eq_orientation is in the period of Pi
-    double Theta_eq_orientation =
-      fmod(fmod(Theta_eq, 2 * acos(-1.0)) + acos(-1.0) / 2.0, acos(-1.0));
-    if (Theta_eq_orientation > (-acos(-1.0) / 2.0) &&
-        Theta_eq_orientation < (acos(-1.0) / 2.0))
-    {
-      outfile << Theta_eq_orientation << "  ";
-    }
-    else
-    {
-      if (Theta_eq_orientation > 0)
-      {
-        outfile << Theta_eq_orientation - acos(-1.0) << "  ";
-      }
-      else
-      {
-        outfile << Theta_eq_orientation + acos(-1.0) << "  ";
-      }
-    }
+    // Note that here Theta_eq_orientation is controlled in the range of
+    // [-2*PI,2*PI]
+    double Theta_eq_orientation = fmod(
+      fmod(Theta_eq, 2.0 * acos(-1.0)) + acos(-1.0) / 2.0, 2.0 * acos(-1.0));
+    outfile << Theta_eq_orientation << "  ";
 
     // Output drag and torque on the entire beam structure
     outfile << sum_total_drag[0] << "  ";
