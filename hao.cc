@@ -1294,8 +1294,19 @@ void ElasticBeamProblem::parameter_study()
 
     try
     {
-      // Solve the system
-      newton_solve();
+
+     if (counter==0)
+      {
+       // Solve the system
+       newton_solve();
+      }
+     else
+      {
+       /// Use the arclength solve
+       double ds=1.0e-4;
+       double suggested_next_ds=arc_length_step_solve(
+        &Global_Physical_Variables::I,ds);
+      }
 
       // Document I
       file << Global_Physical_Variables::I << "  ";
