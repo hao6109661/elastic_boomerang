@@ -184,7 +184,23 @@ public:
     // [-2*PI,2*PI]
     double Theta_eq_orientation = fmod(
       fmod(Theta_eq, 2.0 * acos(-1.0)) + acos(-1.0) / 2.0, 2.0 * acos(-1.0));
-    outfile << Theta_eq_orientation << "  ";
+
+    // To escape the jump of the solutions
+    if (fabs(Theta_eq_orientation) > 1.5 * acos(-1.0))
+    {
+      if (Theta_eq_orientation > 0)
+      {
+        outfile << Theta_eq_orientation - 2 * acos(-1.0) << "  ";
+      }
+      else
+      {
+        outfile << Theta_eq_orientation + 2 * acos(-1.0) << "  ";
+      }
+    }
+    else
+    {
+      outfile << Theta_eq_orientation << "  ";
+    }
 
     // Output drag and torque on the entire beam structure
     outfile << sum_total_drag[0] << "  ";
@@ -1252,7 +1268,8 @@ void ElasticBeamProblem::parameter_study()
   // surpassing 0.1, revert to using the default increment value,
   // I_increment_default.
   double standard_I_increment = 0.0;
-  if (Global_Physical_Variables::I_max > 0.1)
+  double threshold = 0.1;
+  if (Global_Physical_Variables::I_max > threshold)
   {
     standard_I_increment = 1.0e-4;
   }
@@ -1266,8 +1283,8 @@ void ElasticBeamProblem::parameter_study()
   {
     // After surpassing 0.1, revert to using the default increment value,
     // I_increment_default.
-    if (Global_Physical_Variables::I_max > 0.1 &&
-        Global_Physical_Variables::I > 0.1)
+    if (Global_Physical_Variables::I_max > threshold &&
+        Global_Physical_Variables::I > threshold)
     {
       standard_I_increment = Global_Physical_Variables::I_increment_default;
     }
