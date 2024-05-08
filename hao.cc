@@ -55,14 +55,29 @@ namespace Global_Physical_Variables
   /// first arm length = |q+0.5|, second arm length = |q-0.5|
   double Q = 0.4;
 
-  /// Max. value of FSI parameter
-  double I_max = 1.0e-3;
-
-  /// Default increment for FSI parameter
-  double I_increment_default = 1.0e-5;
-
   /// Initial value for theta_eq in the Newton solve
   double Initial_value_for_theta_eq = 0.0;
+
+  /// Default value for desired ds
+  double Ds_default = 1.0e-5;
+
+  // To prevent large solution jumps in critical intervals for I, try to reduce
+  // ds specifically in those areas for smoother and more precise results
+
+  /// End point for the first I interval [Interval1_start,Interval1_end]
+  double Interval1_start = 0.0;
+  double Interval1_end = 0.01;
+
+  /// Start and end points for the second I interval
+  /// [Interval2_start,Interval2_end]
+  double Interval2_start = 0.07;
+  double Interval2_end = 0.08;
+
+  /// Value of ds for first interval
+  double Ds_interval1 = 1.0e-4;
+
+  /// Value of ds for second interval
+  double Ds_interval2 = 1.0e-4;
 
 
 } // namespace Global_Physical_Variables
@@ -1261,51 +1276,64 @@ void ElasticBeamProblem::parameter_study()
   // Initialize the value of backup for dofs
   DoubleVector dofs_backup;
 
-  // Loop over different values for Non-dimensional coefficeient (FSI) I from
-  // 0 to I_max
-  // If I_max is too large, it cases I_increment might be not small enough
-  // In the interval from 0 to 0.1, use 1.0e-5 as the standard increment. After
-  // surpassing 0.1, revert to using the default increment value,
-  // I_increment_default.
-  double standard_I_increment = 0.0;
-  double threshold = 0.1;
-  if (Global_Physical_Variables::I_max > threshold)
+  // Loop over different values for Non-dimensional coefficient (FSI) I by
+  // using arclength increment
+  // The loop stops when I becomes negative since only positive values of I are
+  // considered.
+  double I_backup = 0.0;
+  double ds = 0.0;
+  while (Global_Physical_Variables::I >= 0.0)
   {
-    standard_I_increment = 1.0e-4;
-  }
-  else
-  {
-    standard_I_increment = Global_Physical_Variables::I_increment_default;
-  }
-  // Assign the default value to I_increment
-  double I_increment = standard_I_increment;
-  while (Global_Physical_Variables::I <= Global_Physical_Variables::I_max)
-  {
-    // After surpassing 0.1, revert to using the default increment value,
-    // I_increment_default.
-    if (Global_Physical_Variables::I_max > threshold &&
-        Global_Physical_Variables::I > threshold)
-    {
-      standard_I_increment = Global_Physical_Variables::I_increment_default;
-    }
-
     // Get the dofs
     Problem::get_dofs(dofs_backup);
 
     try
     {
-
-     if (counter==0)
+      if (counter == 0)
       {
-       // Solve the system
-       newton_solve();
+        // Solve the system
+        newton_solve();
       }
-     else
+      else
       {
-       /// Use the arclength solve
-       double ds=1.0e-4;
-       double suggested_next_ds=arc_length_step_solve(
-        &Global_Physical_Variables::I,ds);
+        // Backup the FSI coefficient I
+        I_backup = Global_Physical_Variables::I;
+
+        // To prevent large solution jumps in critical intervals for I, try to
+        // reduce ds specifically in those areas for smoother and more precise
+        // results
+        if (Global_Physical_Variables::Ds_default >
+              Global_Physical_Variables::Ds_interval1 &&
+            Global_Physical_Variables::Ds_default >
+              Global_Physical_Variables::Ds_interval2)
+        {
+          // First I interval [Interval1_start,Interval1_end]
+          if (Global_Physical_Variables::I >=
+                Global_Physical_Variables::Interval1_start &&
+              Global_Physical_Variables::I <=
+                Global_Physical_Variables::Interval1_end)
+          {
+            ds = Global_Physical_Variables::Ds_interval1;
+          }
+          // Second I interval [Interval2_start,Interval2_end]
+          else if (Global_Physical_Variables::I >=
+                     Global_Physical_Variables::Interval2_start &&
+                   Global_Physical_Variables::I <=
+                     Global_Physical_Variables::Interval2_end)
+          {
+            ds = Global_Physical_Variables::Ds_interval2;
+          }
+          else
+          {
+            ds = Global_Physical_Variables::Ds_default;
+          }
+        }
+        else
+        {
+          ds = Global_Physical_Variables::Ds_default;
+        }
+        /// Use the arclength solve
+        ds = arc_length_step_solve(&Global_Physical_Variables::I, ds);
       }
 
       // Document I
@@ -1320,13 +1348,6 @@ void ElasticBeamProblem::parameter_study()
       // Document actual number of Newton iterations taken during the most
       // recent iteration
       file << Problem::Nnewton_iter_taken << std::endl;
-
-      // Since the Newton method is converged, I_increment is still the default
-      // one without decreasing the size
-      I_increment = standard_I_increment;
-
-      // Compute the next value for I
-      Global_Physical_Variables::I = Global_Physical_Variables::I + I_increment;
 
       // Output file stream used for writing results
       ofstream file1;
@@ -1355,80 +1376,34 @@ void ElasticBeamProblem::parameter_study()
     }
     catch (...)
     {
-      // Check whether I=0 or not, because I=0 is the starting point (it is not
-      // produced by previous point)
-      if (fabs(Global_Physical_Variables::I) > 1.0e-12)
+      // If the initial values are not appropriate, the newton method cannot
+      // converge at the starting point I=0.0
+      if (counter == 0)
       {
-        // Check the size of I_increment / 2.0 to make sure I_increment is not
-        // too small
-        if (I_increment / 2.0 > 1.0e-8)
+        oomph_info << "Initial values are not appropriate. Please modify them!"
+                   << std::endl;
+        break;
+      }
+      else
+      {
+        // Check if default ds is small enough
+        if (Global_Physical_Variables::Ds_default < 1.0e-8)
         {
-          // Back to the original value of I because the previous I_increment is
-          // too large
-          Global_Physical_Variables::I =
-            Global_Physical_Variables::I - I_increment;
+          // Since the default is not small enough, assign a smaller value
+          Global_Physical_Variables::Ds_default = 1.0e-8;
 
-          // Half the parameter increment
-          I_increment = I_increment / 2.0;
-
-          // Compute the new value of I
-          Global_Physical_Variables::I =
-            Global_Physical_Variables::I + I_increment;
+          // Since the newton method cannot converge in this turn, overwrite the
+          // failed I value
+          Global_Physical_Variables::I = I_backup;
         }
         else
         {
+          // If default ds is already small enough, it means there is no
+          // solution any more
           break;
         }
       }
-      else
-      { // Since I=0 is the starting point (it is not produced by the previous
-        // point), there is no need to consider the previous point
 
-        // Document I
-        file << Global_Physical_Variables::I << "  ";
-
-        // Document empty file
-        file << "#"
-             << "  "
-             << "#"
-             << "  "
-             << "#"
-             << "  "
-             << "#"
-             << "  "
-             << "#"
-             << "  "
-             << "#"
-             << "  "
-             << "#" << std::endl;
-
-        // Compute the new value for I
-        Global_Physical_Variables::I =
-          Global_Physical_Variables::I + I_increment;
-
-        // Output file stream used for writing results
-        ofstream file1;
-        ofstream file2;
-        ofstream file3;
-
-        // Document the empty file (first arm)
-        sprintf(filename,
-                "RESLT/beam_first_arm_initial_%.2f_%d.dat",
-                Global_Physical_Variables::Initial_value_for_theta_eq,
-                counter);
-        file1.open(filename);
-        file1.close();
-
-        // Document the empty file (second arm)
-        sprintf(filename,
-                "RESLT/beam_second_arm_initial_%.2f_%d.dat",
-                Global_Physical_Variables::Initial_value_for_theta_eq,
-                counter);
-        file2.open(filename);
-        file2.close();
-
-        counter = counter + 1;
-      }
       // Reset the dofs
       Problem::set_dofs(dofs_backup);
     }
@@ -1450,14 +1425,6 @@ int main(int argc, char** argv)
   CommandLineArgs::specify_command_line_flag("--q",
                                              &Global_Physical_Variables::Q);
 
-  // Max. value of FSI parameter
-  CommandLineArgs::specify_command_line_flag("--I_max",
-                                             &Global_Physical_Variables::I_max);
-
-  // Increment for FSI parameter
-  CommandLineArgs::specify_command_line_flag(
-    "--I_increment_default", &Global_Physical_Variables::I_increment_default);
-
   // Opening angle in degrees
   double alpha_in_degrees = 45.0;
   CommandLineArgs::specify_command_line_flag("--alpha_in_degrees",
@@ -1467,6 +1434,33 @@ int main(int argc, char** argv)
   CommandLineArgs::specify_command_line_flag(
     "--Initial_value_for_theta_eq",
     &Global_Physical_Variables::Initial_value_for_theta_eq);
+
+  // Initial value for theta_eq in the Newton solve
+  CommandLineArgs::specify_command_line_flag(
+    "--ds_default", &Global_Physical_Variables::Ds_default);
+
+  // End point for the first I interval [Interval1_start,Interval1_end]
+  CommandLineArgs::specify_command_line_flag(
+    "--interval1_start", &Global_Physical_Variables::Interval1_start);
+
+  CommandLineArgs::specify_command_line_flag(
+    "--interval1_end", &Global_Physical_Variables::Interval1_end);
+
+  // Start and end points for the second I interval
+  // [Interval2_start,Interval2_end]
+  CommandLineArgs::specify_command_line_flag(
+    "--interval2_start", &Global_Physical_Variables::Interval2_start);
+
+  CommandLineArgs::specify_command_line_flag(
+    "--interval2_end", &Global_Physical_Variables::Interval2_end);
+
+  // Value of ds for first interval
+  CommandLineArgs::specify_command_line_flag(
+    "--ds_interval1", &Global_Physical_Variables::Ds_interval1);
+
+  // Value of ds for second interval
+  CommandLineArgs::specify_command_line_flag(
+    "--ds_interval2", &Global_Physical_Variables::Ds_interval2);
 
   // Parse command line
   CommandLineArgs::parse_and_assign();
