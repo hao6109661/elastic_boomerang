@@ -1000,6 +1000,37 @@ public:
   /// No actions need to be performed before a solve
   void actions_before_newton_solve() {}
 
+  /// Dump problem data to allow for later restart
+  void dump_it(ofstream& dump_file)
+  {
+    // Current value of the FSI parameter
+    dump_file << Global_Physical_Variables::I << " # FSI parameter"
+              << std::endl;
+
+    // hierher maybe add q and alpha but then issue warning
+    // if it differs from the one specified on the command line
+
+    // Dump the refinement pattern and the generic problem data
+    Problem::dump(dump_file);
+  }
+
+  /// Read problem data for restart
+  void restart(ifstream& restart_file)
+  {
+    // Read line up to termination sign
+    string input_string;
+    getline(restart_file, input_string, '#');
+
+    // Ignore rest of line
+    restart_file.ignore(80, '\n');
+
+    // Read in FSI parameter
+    Global_Physical_Variables::I = double(atof(input_string.c_str()));
+
+    // Refine the mesh and read in the generic problem data
+    Problem::read(restart_file);
+  }
+
 private:
   /// Pointer to geometric object that represents the beam's undeformed shape
   GeomObject* Undef_beam_pt;
@@ -1339,7 +1370,10 @@ void ElasticBeamProblem::parameter_study()
 
       // Document actual number of Newton iterations taken during the most
       // recent iteration
-      file << Problem::Nnewton_iter_taken << std::endl;
+      file << Problem::Nnewton_iter_taken << "  ";
+
+      // Step label
+      file << counter << std::endl;
 
       // Output file stream used for writing results
       ofstream file1;
@@ -1364,6 +1398,13 @@ void ElasticBeamProblem::parameter_study()
       Beam_mesh_second_arm_pt->output(file2, 5);
       file2.close();
 
+      // Write restart file
+      sprintf(filename, "RESLT/restart%i.dat", counter);
+      file2.open(filename);
+      dump_it(file2);
+      file2.close();
+
+      // Bump counter for output
       counter = counter + 1;
     }
     catch (...)
@@ -1455,6 +1496,10 @@ int main(int argc, char** argv)
   CommandLineArgs::specify_command_line_flag(
     "--ds_interval2", &Global_Physical_Variables::Ds_interval2);
 
+  // Restart file
+  std::string restart_file;
+  CommandLineArgs::specify_command_line_flag("--restart_file", &restart_file);
+
   // Parse command line
   CommandLineArgs::parse_and_assign();
 
@@ -1476,21 +1521,17 @@ int main(int argc, char** argv)
   //  first arm length = |q+0.5|, second arm length = |q-0.5|
   // double q = 0.35;
 
-  // hierher fix this! This must use the version from the namespace
-
   // Construct the problem
   ElasticBeamProblem problem(n_element);
 
-  // Check that we're ready to go:
-  cout << "\n\n\nProblem self-test ";
-  if (problem.self_test() == 0)
+  // Do the restart?
+  if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
   {
-    cout << "passed: Problem can be solved." << std::endl;
-  }
-  else
-  {
-    throw OomphLibError(
-      "Self test failed", OOMPH_CURRENT_FUNCTION, OOMPH_EXCEPTION_LOCATION);
+    // Open/read restart file
+    std::ifstream file2;
+    file2.open(restart_file.c_str());
+    problem.restart(file2);
+    file2.close();
   }
 
   // Conduct parameter study
