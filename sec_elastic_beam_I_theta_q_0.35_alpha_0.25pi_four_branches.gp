@@ -48,10 +48,10 @@ I_value = real(system(sprintf("awk 'NR==%d+1{print $1}' \"%s\"", i, file1)))
 set label 1 sprintf("I = %.9f", I_value) at screen 0.97, 0.01 right front font ",12"
 
 # Plot the picture
-plot file1 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "orange" title sprintf('q=%.2f, {/symbol a}=%.3fπ', q, alpha/pi), \
-     file2 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "red" title sprintf('q=%.2f, {/symbol a}=%.3fπ', q, alpha/pi) , \
-     file5 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "red" title "" , \
-     file6 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "orange" title "" , \
+plot file1 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "red" title sprintf('q=%.2f, {/symbol a}=%.3fπ', q, alpha/pi), \
+     file2 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "orange" title sprintf('q=%.2f, {/symbol a}=%.3fπ', q, alpha/pi) , \
+     file5 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "orange" title "" , \
+     file6 using 1:(strcol(3) eq "#" ? 1/0 : $3) with points pointsize 0.5 pointtype 7 lc rgb "red" title "" , \
      file1 using 1:(strcol(3) eq "#" ? 1/0 : $3) every ::i::i with points pointsize 1.2 pointtype 7 lc rgb "blue" title "point considered with iteration", \
      file1 using 1:3:(stringcolumn(8)) every ::i::i with labels offset label_offset_x,label_offset_y font ",label_size" tc rgb "blue" title ""
 

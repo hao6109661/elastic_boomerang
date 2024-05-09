@@ -73,11 +73,14 @@ namespace Global_Physical_Variables
   double Interval2_start = 0.07;
   double Interval2_end = 0.08;
 
+  // If the interval_ds is smaller than the default, it will automatically
+  // revert to using the default interval
+
   /// Value of ds for first interval
-  double Ds_interval1 = 1.0e-4;
+  double Ds_interval1 = 10.0;
 
   /// Value of ds for second interval
-  double Ds_interval2 = 1.0e-4;
+  double Ds_interval2 = 10.0;
 
 
 } // namespace Global_Physical_Variables
@@ -1248,14 +1251,6 @@ void ElasticBeamProblem::parameter_study()
   // directory exists and issues a warning if it doesn't.
   doc_info.set_directory("RESLT");
 
-  // unsigned nalpha = 50;
-  //  Loop over different values for Alpha from 0.02pi to 0.98pi
-  // for (unsigned i = 1; i < nalpha; i++)
-  //{
-  // Global_Physical_Variables::Alpha = (acos(-1.0) / double(nalpha)) *
-  // double(i);
-  // Global_Physical_Variables::Alpha = acos(-1.0) * 0.25;
-
   // Output file stream used for writing results
   ofstream file;
 
@@ -1302,36 +1297,33 @@ void ElasticBeamProblem::parameter_study()
         // To prevent large solution jumps in critical intervals for I, try to
         // reduce ds specifically in those areas for smoother and more precise
         // results
+
+        // First I interval [Interval1_start,Interval1_end]
         if (Global_Physical_Variables::Ds_default >
               Global_Physical_Variables::Ds_interval1 &&
-            Global_Physical_Variables::Ds_default >
-              Global_Physical_Variables::Ds_interval2)
+            Global_Physical_Variables::I >=
+              Global_Physical_Variables::Interval1_start &&
+            Global_Physical_Variables::I <=
+              Global_Physical_Variables::Interval1_end)
         {
-          // First I interval [Interval1_start,Interval1_end]
-          if (Global_Physical_Variables::I >=
-                Global_Physical_Variables::Interval1_start &&
-              Global_Physical_Variables::I <=
-                Global_Physical_Variables::Interval1_end)
-          {
-            ds = Global_Physical_Variables::Ds_interval1;
-          }
-          // Second I interval [Interval2_start,Interval2_end]
-          else if (Global_Physical_Variables::I >=
-                     Global_Physical_Variables::Interval2_start &&
-                   Global_Physical_Variables::I <=
-                     Global_Physical_Variables::Interval2_end)
-          {
-            ds = Global_Physical_Variables::Ds_interval2;
-          }
-          else
-          {
-            ds = Global_Physical_Variables::Ds_default;
-          }
+          ds = Global_Physical_Variables::Ds_interval1;
+        }
+        // Second I interval [Interval2_start,Interval2_end]
+        else if (Global_Physical_Variables::Ds_default >
+                   Global_Physical_Variables::Ds_interval2 &&
+                 Global_Physical_Variables::I >=
+                   Global_Physical_Variables::Interval2_start &&
+                 Global_Physical_Variables::I <=
+                   Global_Physical_Variables::Interval2_end)
+        {
+          ds = Global_Physical_Variables::Ds_interval2;
         }
         else
         {
+          // Use the default one
           ds = Global_Physical_Variables::Ds_default;
         }
+
         /// Use the arclength solve
         ds = arc_length_step_solve(&Global_Physical_Variables::I, ds);
       }
@@ -1380,8 +1372,9 @@ void ElasticBeamProblem::parameter_study()
       // converge at the starting point I=0.0
       if (counter == 0)
       {
-        oomph_info << "Initial values are not appropriate. Please modify them!"
-                   << std::endl;
+        oomph_info
+          << "Initial values for I=0.0 are not appropriate. Please modify them!"
+          << std::endl;
         break;
       }
       else

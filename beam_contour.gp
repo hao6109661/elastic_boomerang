@@ -2,7 +2,7 @@ reset
 set terminal png
 
 # Loop over all files 
-do for [i=0:20]{
+do for [i=0:0]{
 
 # Non-dimensional coefficient (FSI)
 I = (1.0e-3/20.0)*i
@@ -31,9 +31,9 @@ set ytics( "0" 0 , "0.25π" 0.25*pi , "0.5π" 0.5*pi , "0.75π" 0.75*pi , "π" p
 set label 1 sprintf("I=%.5f", I) at screen 0.98, 0.02 right front font ",15"
 
 # Set file handle
-file = sprintf("beam_contour_theta_eq%d.dat",i)
+file = sprintf("beam_contour_theta_eq_I_0.dat")
 
 # Plot scatter plot with smaller solid circles
-plot file using 2:3:5 with points pointsize 1.2 pointtype 7
+plot file using 2:3:5 with points pointsize 0.8 pointtype 7
 
 }

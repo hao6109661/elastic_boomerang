@@ -8,7 +8,7 @@ initial3=0.00
 initial4=-3.24
 
 # Set frame rate and input image file name pattern
-framerate=8
+framerate=7
 
 # Combine the first set of images into the first MP4 animation
 ffmpeg -framerate $framerate -i "combine_elastic_beam_I_theta_q_${q}_alpha_${alpha_without_pi}pi_initial_${initial1}_%d.png" -c:v libx264 -r $framerate -pix_fmt yuv420p first.mp4
