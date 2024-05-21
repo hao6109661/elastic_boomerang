@@ -196,7 +196,7 @@ do for [i = 1:|theta_list|] {
 # (such solutions are very closed, so we will not give the offset to the corresponding figures of boomerang)
 array current_group[1]
 
-# Record the number of branches we have for this case 
+# Record the number of branches we have for this scanning line 
 counter_branch=0
 
 # Iterate through the elements of suffix_list
