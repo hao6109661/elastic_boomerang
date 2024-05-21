@@ -226,7 +226,7 @@ do for [i=1:|suffix_list|] {
               current_group[j] = new_current_group[j]
            }
         } else {  
-            # If the difference (step numbers) is greater than or equal to 5, start a new group
+            # If the difference (theta_eq) is greater than or equal to 1.0e-3, start a new group
             # It means that the adjacent solutions are not in the same branch
         
             # Set files to record the data for solutions in different branches  
