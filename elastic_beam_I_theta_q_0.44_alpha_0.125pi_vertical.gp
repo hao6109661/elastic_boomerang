@@ -42,7 +42,8 @@ set table 'filtered_data.dat'
 plot file1 using 1:3:(abs($1 - target) <= epsilon ? $9 : "#"):(abs($1 - target) <= epsilon ? $8 : "#") with table
 unset table
 
-# Since for some area ds is very small, we adjust the size of epsilon so that at least finding one point within the interval
+# Since for some area ds is very small, we adjust the size of epsilon so that at least finding one point 
+# within the interval |I_from_the_general_file-target|<epsilon
 all_hash = 0
 
 n=0
