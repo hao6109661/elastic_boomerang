@@ -989,7 +989,7 @@ class ElasticBeamProblem : public Problem
 public:
   /// Constructor: The arguments are the number of elements and the parameter to
   /// determine the length of the beam
-  ElasticBeamProblem(const unsigned& n_elem);
+  ElasticBeamProblem(const unsigned& n_elem1, const unsigned& n_elem2);
 
   /// Conduct a parameter study
   void parameter_study();
@@ -1133,7 +1133,8 @@ public:
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
 //======================================================================
-ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
+ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
+                                       const unsigned& n_elem2)
 {
   // Drift speed and acceleration of horizontal motion
   double v = 0.0;
@@ -1171,14 +1172,14 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem)
   // nodes. (first arm)
   double length_1 = fabs(*q_pt + 0.5);
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem, length_1, Undef_beam_pt);
+    n_elem1, length_1, Undef_beam_pt);
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (second arm)
   double length_2 = fabs(*q_pt - 0.5);
   Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem, length_2, Undef_beam_pt);
+    n_elem2, length_2, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure
@@ -1274,6 +1275,8 @@ void ElasticBeamProblem::parameter_study()
   // Problem::Max_residuals = 1.0e10;
   // Problem::Max_newton_iterations = 20;
   Problem::Always_take_one_newton_step = true;
+  Problem::Scale_arc_length = false;
+  Problem::Theta_squared = 0.2;
 
   // Create label for output
   DocInfo doc_info;
@@ -1290,7 +1293,7 @@ void ElasticBeamProblem::parameter_study()
 
   // Write the file name
   sprintf(filename,
-          "RESLT/elastic_beam_I_theta_q_%.2f_alpha_%.3fpi_initial_%.2f.dat",
+          "RESLT/elastic_beam_I_theta_q_%.3f_alpha_%.3fpi_initial_%.2f.dat",
           Global_Physical_Variables::Q,
           Global_Physical_Variables::Alpha / acos(-1.0),
           Global_Physical_Variables::Initial_value_for_theta_eq);
@@ -1515,14 +1518,15 @@ int main(int argc, char** argv)
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
-  unsigned n_element = 10;
+  unsigned n_element1 = 20;
+  unsigned n_element2 = 20;
 
   //  Aspect ratio to determine the length of the beam
   //  first arm length = |q+0.5|, second arm length = |q-0.5|
   // double q = 0.35;
 
   // Construct the problem
-  ElasticBeamProblem problem(n_element);
+  ElasticBeamProblem problem(n_element1, n_element2);
 
   // Do the restart?
   if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
