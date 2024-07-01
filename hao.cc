@@ -55,6 +55,8 @@ namespace Global_Physical_Variables
   /// first arm length = |q+0.5|, second arm length = |q-0.5|
   double Q = 0.4;
 
+  double Stretch_ratio = 1.0;
+
   /// Initial value for theta_eq in the Newton solve
   double Initial_value_for_theta_eq = 0.0;
 
@@ -1033,7 +1035,9 @@ public:
 
 private:
   /// Pointer to geometric object that represents the beam's undeformed shape
-  GeomObject* Undef_beam_pt;
+  GeomObject* Undef_beam_pt1;
+
+  GeomObject* Undef_beam_pt2;
 
   /// Pointer to RigidBodyElement that actually contains the rigid body data
   RigidBodyElement* Rigid_body_element_pt;
@@ -1129,6 +1133,88 @@ public:
   }
 };
 
+//=========================================================================
+/// Steady, straight 1D line in 2D space with stretch_ratio
+///  \f[ x = 0.0 \f]
+///  \f[ y = \zeta \f]
+//=========================================================================
+class StraightLineVertical_new : public GeomObject
+{
+public:
+  /// Constructor derives from GeomObject(1, 2)
+  /// Constructor:  Pass height (pinned by default)
+  StraightLineVertical_new(const double& stretch_ratio) : GeomObject(1, 2)
+  {
+    Stretch_ratio = stretch_ratio;
+  }
+
+  /// Broken copy constructor
+  StraightLineVertical_new(const StraightLineVertical_new& dummy) = delete;
+
+  /// Broken assignment operator
+  void operator=(const StraightLineVertical_new&) = delete;
+
+  /// Position Vector at Lagrangian coordinate zeta
+  void position(const Vector<double>& zeta, Vector<double>& r) const
+  {
+    r[0] = 0.0;
+    r[1] = zeta[0] * Stretch_ratio;
+  }
+
+
+  /// Derivative of position Vector w.r.t. to coordinates:
+  /// \f$ \frac{dR_i}{d \zeta_\alpha}\f$ = drdzeta(alpha,i).
+  /// Evaluated at current time.
+  virtual void dposition(const Vector<double>& zeta,
+                         DenseMatrix<double>& drdzeta) const
+  {
+    // Tangent vector
+    drdzeta(0, 0) = 0.0;
+    drdzeta(0, 1) = Stretch_ratio;
+  }
+
+
+  /// 2nd derivative of position Vector w.r.t. to coordinates:
+  /// \f$ \frac{d^2R_i}{d \zeta_\alpha d \zeta_\beta}\f$ =
+  /// ddrdzeta(alpha,beta,i). Evaluated at current time.
+  virtual void d2position(const Vector<double>& zeta,
+                          RankThreeTensor<double>& ddrdzeta) const
+  {
+    // Derivative of tangent vector
+    ddrdzeta(0, 0, 0) = 0.0;
+    ddrdzeta(0, 0, 1) = 0.0;
+  }
+
+
+  /// Posn Vector and its  1st & 2nd derivatives
+  /// w.r.t. to coordinates:
+  /// \f$ \frac{dR_i}{d \zeta_\alpha}\f$ = drdzeta(alpha,i).
+  /// \f$ \frac{d^2R_i}{d \zeta_\alpha d \zeta_\beta}\f$ =
+  /// ddrdzeta(alpha,beta,i).
+  /// Evaluated at current time.
+  virtual void d2position(const Vector<double>& zeta,
+                          Vector<double>& r,
+                          DenseMatrix<double>& drdzeta,
+                          RankThreeTensor<double>& ddrdzeta) const
+  {
+    // Position Vector
+    r[0] = 0.0;
+    r[1] = zeta[0] * Stretch_ratio;
+
+    // Tangent vector
+    drdzeta(0, 0) = 0.0;
+    drdzeta(0, 1) = Stretch_ratio;
+
+    // Derivative of tangent vector
+    ddrdzeta(0, 0, 0) = 0.0;
+    ddrdzeta(0, 0, 1) = 0.0;
+  }
+
+private:
+  /// Pointer to the Mesh of HaoHermiteBeamElements
+  double Stretch_ratio;
+};
+
 
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
@@ -1161,25 +1247,32 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
 
   // Set the undeformed beam shape for two arms (in the reference orientation
   // before applying the rigid body motion)
-  Undef_beam_pt = new StraightLineVertical();
+  // Undef_beam_pt = new StraightLineVertical();
 
   // Aspect ratio to determine the length of the beam
   // first arm length = |q+0.5|, second arm length = |q-0.5|
-  double* q_pt = &Global_Physical_Variables::Q;
+  // double* q_pt = &Global_Physical_Variables::Q;
+
+  double* stretch_ratio_pt = &Global_Physical_Variables::Stretch_ratio;
+
+  Undef_beam_pt1 = new StraightLineVertical_new(fabs(*stretch_ratio_pt + 0.5));
+  Undef_beam_pt2 = new StraightLineVertical_new(fabs(*stretch_ratio_pt - 0.5));
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (first arm)
-  double length_1 = fabs(*q_pt + 0.5);
+  // double length_1 = fabs(*q_pt + 0.5);
+  double length_1 = 1.0;
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem1, length_1, Undef_beam_pt);
+    n_elem1, length_1, Undef_beam_pt1);
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (second arm)
-  double length_2 = fabs(*q_pt - 0.5);
+  // double length_2 = fabs(*q_pt - 0.5);
+  double length_2 = 1.0;
   Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem2, length_2, Undef_beam_pt);
+    n_elem2, length_2, Undef_beam_pt2);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure
@@ -1222,7 +1315,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
     // Note: no rotation!
 
     // Set the undeformed shape for each element
-    elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+    elem_pt->undeformed_beam_pt() = Undef_beam_pt1;
 
   } // end of loop over elements
 
@@ -1256,7 +1349,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
     elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
 
     // Set the undeformed shape for each element
-    elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+    elem_pt->undeformed_beam_pt() = Undef_beam_pt2;
 
   } // end of loop over elements
 
@@ -1275,8 +1368,8 @@ void ElasticBeamProblem::parameter_study()
   // Problem::Max_residuals = 1.0e10;
   // Problem::Max_newton_iterations = 20;
   Problem::Always_take_one_newton_step = true;
-  Problem::Scale_arc_length = false;
-  Problem::Theta_squared = 0.2;
+  // Problem::Scale_arc_length = false;
+  // Problem::Theta_squared = 0.2;
 
   // Create label for output
   DocInfo doc_info;
@@ -1304,6 +1397,32 @@ void ElasticBeamProblem::parameter_study()
 
   // Initialize the value of backup for dofs
   DoubleVector dofs_backup;
+
+  // ////////////////////////////////////////////////////////////////////////
+  // // TEST!
+  // ofstream file1;
+  // ofstream file2;
+  // // Document the solution (first arm)
+  // sprintf(filename,
+  //         "RESLT/beam_first_arm_initial_%.2f_%d.dat",
+  //         Global_Physical_Variables::Initial_value_for_theta_eq,
+  //         counter);
+  // file1.open(filename);
+  // Beam_mesh_first_arm_pt->output(file1, 5);
+  // file1.close();
+
+  // // Document the solution (second arm)
+  // sprintf(filename,
+  //         "RESLT/beam_second_arm_initial_%.2f_%d.dat",
+  //         Global_Physical_Variables::Initial_value_for_theta_eq,
+  //         counter);
+  // file2.open(filename);
+  // Beam_mesh_second_arm_pt->output(file2, 5);
+  // file2.close();
+  // ///////////////////////////////////////////////////////////////////////////
+
+
+  // exit(0);
 
   // Loop over different values for Non-dimensional coefficient (FSI) I by
   // using arclength increment
@@ -1457,6 +1576,10 @@ int main(int argc, char** argv)
 {
   // Store command line arguments
   CommandLineArgs::setup(argc, argv);
+
+  // Stretch_ratio
+  CommandLineArgs::specify_command_line_flag(
+    "--stretch_ratio", &Global_Physical_Variables::Stretch_ratio);
 
   // Aspect ratio
   CommandLineArgs::specify_command_line_flag("--q",
