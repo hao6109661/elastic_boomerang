@@ -53,8 +53,9 @@ namespace Global_Physical_Variables
   /// Aspect ratio: Don't change this on the fly; should only be assigned
   /// once before the mesh is generated
   /// first arm length = |q+0.5|, second arm length = |q-0.5|
-  double Q = 0.4;
+  // double Q = 0.4;
 
+  // Define the length of the beam in the GeomObejct
   double Stretch_ratio = 1.0;
 
   /// Initial value for theta_eq in the Newton solve
@@ -162,7 +163,7 @@ public:
 
     // Loop over the nodes in the all mesh and add them as external Data
     // because they affect the traction and therefore the total drag
-    // and torque on the object.
+    // and torque on the object
     unsigned npointer = beam_mesh_pt.size();
     for (unsigned i = 0; i < npointer; i++)
     {
@@ -1136,13 +1137,13 @@ public:
 //=========================================================================
 /// Steady, straight 1D line in 2D space with stretch_ratio
 ///  \f[ x = 0.0 \f]
-///  \f[ y = \zeta \f]
+///  \f[ y = \zeta*stretch_ratio  \f]
 //=========================================================================
 class StraightLineVertical_new : public GeomObject
 {
 public:
   /// Constructor derives from GeomObject(1, 2)
-  /// Constructor:  Pass height (pinned by default)
+  /// Constructor: Pass stretch_ratio
   StraightLineVertical_new(const double& stretch_ratio) : GeomObject(1, 2)
   {
     Stretch_ratio = stretch_ratio;
@@ -1211,7 +1212,7 @@ public:
   }
 
 private:
-  /// Pointer to the Mesh of HaoHermiteBeamElements
+  /// Define the length of the beam
   double Stretch_ratio;
 };
 
@@ -1253,8 +1254,9 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
   // first arm length = |q+0.5|, second arm length = |q-0.5|
   // double* q_pt = &Global_Physical_Variables::Q;
 
+  // Still use the same expression of q as before to represent the length of the
+  // two arms
   double* stretch_ratio_pt = &Global_Physical_Variables::Stretch_ratio;
-
   Undef_beam_pt1 = new StraightLineVertical_new(fabs(*stretch_ratio_pt + 0.5));
   Undef_beam_pt2 = new StraightLineVertical_new(fabs(*stretch_ratio_pt - 0.5));
 
@@ -1368,8 +1370,8 @@ void ElasticBeamProblem::parameter_study()
   // Problem::Max_residuals = 1.0e10;
   // Problem::Max_newton_iterations = 20;
   Problem::Always_take_one_newton_step = true;
-  // Problem::Scale_arc_length = false;
-  // Problem::Theta_squared = 0.2;
+  Problem::Scale_arc_length = false;
+  Problem::Theta_squared = 0.3;
 
   // Create label for output
   DocInfo doc_info;
@@ -1386,8 +1388,8 @@ void ElasticBeamProblem::parameter_study()
 
   // Write the file name
   sprintf(filename,
-          "RESLT/elastic_beam_I_theta_q_%.3f_alpha_%.3fpi_initial_%.2f.dat",
-          Global_Physical_Variables::Q,
+          "RESLT/elastic_beam_I_theta_s_%.3f_alpha_%.3fpi_initial_%.2f.dat",
+          Global_Physical_Variables::Stretch_ratio,
           Global_Physical_Variables::Alpha / acos(-1.0),
           Global_Physical_Variables::Initial_value_for_theta_eq);
   file.open(filename);
@@ -1582,8 +1584,8 @@ int main(int argc, char** argv)
     "--stretch_ratio", &Global_Physical_Variables::Stretch_ratio);
 
   // Aspect ratio
-  CommandLineArgs::specify_command_line_flag("--q",
-                                             &Global_Physical_Variables::Q);
+  // CommandLineArgs::specify_command_line_flag("--q",
+  //&Global_Physical_Variables::Q);
 
   // Opening angle in degrees
   double alpha_in_degrees = 45.0;
