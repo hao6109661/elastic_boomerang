@@ -53,10 +53,7 @@ namespace Global_Physical_Variables
   /// Aspect ratio: Don't change this on the fly; should only be assigned
   /// once before the mesh is generated
   /// first arm length = |q+0.5|, second arm length = |q-0.5|
-  // double Q = 0.4;
-
-  // Define the length of the beam in the GeomObejct
-  double Stretch_ratio = 1.0;
+  double Q = 0.4;
 
   /// Initial value for theta_eq in the Newton solve
   double Initial_value_for_theta_eq = 0.0;
@@ -76,7 +73,7 @@ namespace Global_Physical_Variables
   double Interval2_start = 0.07;
   double Interval2_end = 0.08;
 
-  // If the interval_ds is smaller than the default, it will automatically
+  // If the interval_ds is larger than the default, it will automatically
   // revert to using the default interval
 
   /// Value of ds for first interval
@@ -84,7 +81,6 @@ namespace Global_Physical_Variables
 
   /// Value of ds for second interval
   double Ds_interval2 = 10.0;
-
 
 } // namespace Global_Physical_Variables
 
@@ -233,6 +229,7 @@ protected:
   // Fill in contribution to residuals
   void fill_in_contribution_to_residuals(Vector<double>& residuals)
   {
+    abort();
     // oomph_info << "ndof in element: " << residuals.size() << std::endl;
 
     // Get current total drag and torque
@@ -581,8 +578,12 @@ public:
     s[j] = integral_pt()->knot(intpt, j);
 
     compute_slender_body_traction_on_beam_in_reference_configuration(s, load);
-    load[0] = *(i_pt()) * load[0];
-    load[1] = *(i_pt()) * load[1];
+    // load[0] = *(i_pt()) * load[0];
+    // load[1] = *(i_pt()) * load[1];
+
+    // Test! Give constant pressure to the beam
+    load[0] = 1.0e-7;
+    load[1] = 0.0;
   }
 
 
@@ -1139,21 +1140,21 @@ public:
 ///  \f[ x = 0.0 \f]
 ///  \f[ y = \zeta*stretch_ratio  \f]
 //=========================================================================
-class StraightLineVertical_new : public GeomObject
+class NewStraightLineVertical : public GeomObject
 {
 public:
   /// Constructor derives from GeomObject(1, 2)
-  /// Constructor: Pass stretch_ratio
-  StraightLineVertical_new(const double& stretch_ratio) : GeomObject(1, 2)
+  /// Pass stretch_ratio to this class
+  NewStraightLineVertical(const double& stretch_ratio) : GeomObject(1, 2)
   {
     Stretch_ratio = stretch_ratio;
   }
 
   /// Broken copy constructor
-  StraightLineVertical_new(const StraightLineVertical_new& dummy) = delete;
+  NewStraightLineVertical(const NewStraightLineVertical& dummy) = delete;
 
   /// Broken assignment operator
-  void operator=(const StraightLineVertical_new&) = delete;
+  void operator=(const NewStraightLineVertical&) = delete;
 
   /// Position Vector at Lagrangian coordinate zeta
   void position(const Vector<double>& zeta, Vector<double>& r) const
@@ -1252,41 +1253,63 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
 
   // Aspect ratio to determine the length of the beam
   // first arm length = |q+0.5|, second arm length = |q-0.5|
-  // double* q_pt = &Global_Physical_Variables::Q;
+  double* q_pt = &Global_Physical_Variables::Q;
 
-  // Still use the same expression of q as before to represent the length of the
-  // two arms
-  double* stretch_ratio_pt = &Global_Physical_Variables::Stretch_ratio;
-  Undef_beam_pt1 = new StraightLineVertical_new(fabs(*stretch_ratio_pt + 0.5));
-  Undef_beam_pt2 = new StraightLineVertical_new(fabs(*stretch_ratio_pt - 0.5));
+  // Set for test! Switch between old and new code
+  bool old_version = false;
+  if (CommandLineArgs::command_line_flag_has_been_set("--old_version"))
+  {
+    old_version = true;
+  }
+
+  // Assign values to the stretch_ratio and length_1 for different versions of
+  // the code
+  double stretch_ratio = 0.0;
+  double length_1 = 0.0;
+  if (old_version == false)
+  {
+    // New code
+    stretch_ratio = *q_pt + 0.5;
+    length_1 = 1.0;
+  }
+  else
+  {
+    // Old code
+    stretch_ratio = 1.0;
+    length_1 = *q_pt + 0.5;
+  }
+  // Set the undeformed beam shape
+  Undef_beam_pt1 = new NewStraightLineVertical(stretch_ratio);
+  // Undef_beam_pt2 = new StraightLineVertical_new(fabs(*stretch_ratio_pt -
+  // 0.5));
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
   // nodes. (first arm)
   // double length_1 = fabs(*q_pt + 0.5);
-  double length_1 = 1.0;
+  // double length_1 = 1.0;
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
     n_elem1, length_1, Undef_beam_pt1);
 
-  // Create the (Lagrangian!) mesh, using the StraightLineVertical object
-  // Undef_beam_pt to specify the initial (Eulerian) position of the
-  // nodes. (second arm)
-  // double length_2 = fabs(*q_pt - 0.5);
-  double length_2 = 1.0;
-  Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem2, length_2, Undef_beam_pt2);
+  // // Create the (Lagrangian!) mesh, using the StraightLineVertical object
+  // // Undef_beam_pt to specify the initial (Eulerian) position of the
+  // // nodes. (second arm)
+  // // double length_2 = fabs(*q_pt - 0.5);
+  // double length_2 = 1.0;
+  // Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+  //   n_elem2, length_2, Undef_beam_pt2);
 
-  // Pass the pointer of the mesh to the RigidBodyElement class
-  // so it can work out the drag and torque on the entire structure
-  Vector<SolidMesh*> Beam_mesh_pt(2);
-  Beam_mesh_pt[0] = Beam_mesh_first_arm_pt;
-  Beam_mesh_pt[1] = Beam_mesh_second_arm_pt;
-  Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
+  // // Pass the pointer of the mesh to the RigidBodyElement class
+  // // so it can work out the drag and torque on the entire structure
+  // Vector<SolidMesh*> Beam_mesh_pt(2);
+  // Beam_mesh_pt[0] = Beam_mesh_first_arm_pt;
+  // Beam_mesh_pt[1] = Beam_mesh_second_arm_pt;
+  // Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
 
   // Build the problem's global mesh
   add_sub_mesh(Beam_mesh_first_arm_pt);
-  add_sub_mesh(Beam_mesh_second_arm_pt);
-  add_sub_mesh(Rigid_body_element_mesh_pt);
+  // add_sub_mesh(Beam_mesh_second_arm_pt);
+  // add_sub_mesh(Rigid_body_element_mesh_pt);
   build_global_mesh();
 
   // Set the boundary conditions: One end of the beam is clamped in space
@@ -1322,38 +1345,38 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
   } // end of loop over elements
 
 
-  // Set the boundary conditions: One end of the beam is clamped in space
-  // Pin displacements in both x and y directions, and pin the derivative of
-  // position Vector w.r.t. to coordinates in x direction. (second arm)
-  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
-  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
-  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
+  // // Set the boundary conditions: One end of the beam is clamped in space
+  // // Pin displacements in both x and y directions, and pin the derivative of
+  // // position Vector w.r.t. to coordinates in x direction. (second arm)
+  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
+  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
+  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
 
-  // Find number of elements in the mesh (second arm)
-  n_element = Beam_mesh_second_arm_pt->nelement();
+  // // Find number of elements in the mesh (second arm)
+  // n_element = Beam_mesh_second_arm_pt->nelement();
 
-  // Loop over the elements to set physical parameters etc. (second arm)
-  for (unsigned e = 0; e < n_element; e++)
-  {
-    // Upcast to the specific element type
-    HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
-      Beam_mesh_second_arm_pt->element_pt(e));
+  // // Loop over the elements to set physical parameters etc. (second arm)
+  // for (unsigned e = 0; e < n_element; e++)
+  // {
+  //   // Upcast to the specific element type
+  //   HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
+  //     Beam_mesh_second_arm_pt->element_pt(e));
 
-    // Pass the pointer of RigidBodyElement to the each element
-    // so we can work out the rigid body motion
-    elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
+  //   // Pass the pointer of RigidBodyElement to the each element
+  //   // so we can work out the rigid body motion
+  //   elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
 
-    // Set physical parameters for each element:
-    elem_pt->h_pt() = &Global_Physical_Variables::H;
-    elem_pt->i_pt() = &Global_Physical_Variables::I;
+  //   // Set physical parameters for each element:
+  //   elem_pt->h_pt() = &Global_Physical_Variables::H;
+  //   elem_pt->i_pt() = &Global_Physical_Variables::I;
 
-    // Rotate by opening angle
-    elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
+  //   // Rotate by opening angle
+  //   elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
 
-    // Set the undeformed shape for each element
-    elem_pt->undeformed_beam_pt() = Undef_beam_pt2;
+  //   // Set the undeformed shape for each element
+  //   elem_pt->undeformed_beam_pt() = Undef_beam_pt2;
 
-  } // end of loop over elements
+  // } // end of loop over elements
 
   // Assign the global and local equation numbers
   cout << "# of dofs " << assign_eqn_numbers() << std::endl;
@@ -1386,13 +1409,13 @@ void ElasticBeamProblem::parameter_study()
   // String used for the filename
   char filename[100];
 
-  // Write the file name
-  sprintf(filename,
-          "RESLT/elastic_beam_I_theta_s_%.3f_alpha_%.3fpi_initial_%.2f.dat",
-          Global_Physical_Variables::Stretch_ratio,
-          Global_Physical_Variables::Alpha / acos(-1.0),
-          Global_Physical_Variables::Initial_value_for_theta_eq);
-  file.open(filename);
+  // // Write the file name
+  // sprintf(filename,
+  //         "RESLT/elastic_beam_I_theta_s_%.3f_alpha_%.3fpi_initial_%.2f.dat",
+  //         Global_Physical_Variables::Q,
+  //         Global_Physical_Variables::Alpha / acos(-1.0),
+  //         Global_Physical_Variables::Initial_value_for_theta_eq);
+  // file.open(filename);
 
   // Counter to record the iterations for the while loop
   unsigned counter = 0;
@@ -1400,18 +1423,22 @@ void ElasticBeamProblem::parameter_study()
   // Initialize the value of backup for dofs
   DoubleVector dofs_backup;
 
-  // ////////////////////////////////////////////////////////////////////////
-  // // TEST!
-  // ofstream file1;
-  // ofstream file2;
-  // // Document the solution (first arm)
-  // sprintf(filename,
-  //         "RESLT/beam_first_arm_initial_%.2f_%d.dat",
-  //         Global_Physical_Variables::Initial_value_for_theta_eq,
-  //         counter);
-  // file1.open(filename);
-  // Beam_mesh_first_arm_pt->output(file1, 5);
-  // file1.close();
+
+  /////////////////////////////////////////////////////////////////////////////////
+  // TEST!(temporarily set here for test!)
+
+  // Solve the system
+  newton_solve();
+
+  // Document the solution (first arm)
+  ofstream file1;
+  sprintf(filename,
+          "RESLT/beam_first_arm_initial_%.2f_%d.dat",
+          Global_Physical_Variables::Initial_value_for_theta_eq,
+          counter);
+  file1.open(filename);
+  Beam_mesh_first_arm_pt->output(file1, 5);
+  file1.close();
 
   // // Document the solution (second arm)
   // sprintf(filename,
@@ -1421,10 +1448,12 @@ void ElasticBeamProblem::parameter_study()
   // file2.open(filename);
   // Beam_mesh_second_arm_pt->output(file2, 5);
   // file2.close();
-  // ///////////////////////////////////////////////////////////////////////////
 
+  // Ignore the following code
+  exit(0);
 
-  // exit(0);
+  /////////////////////////////////////////////////////////////////////////////////
+
 
   // Loop over different values for Non-dimensional coefficient (FSI) I by
   // using arclength increment
@@ -1579,13 +1608,9 @@ int main(int argc, char** argv)
   // Store command line arguments
   CommandLineArgs::setup(argc, argv);
 
-  // Stretch_ratio
-  CommandLineArgs::specify_command_line_flag(
-    "--stretch_ratio", &Global_Physical_Variables::Stretch_ratio);
-
   // Aspect ratio
-  // CommandLineArgs::specify_command_line_flag("--q",
-  //&Global_Physical_Variables::Q);
+  CommandLineArgs::specify_command_line_flag("--q",
+                                             &Global_Physical_Variables::Q);
 
   // Opening angle in degrees
   double alpha_in_degrees = 45.0;
@@ -1624,6 +1649,9 @@ int main(int argc, char** argv)
   CommandLineArgs::specify_command_line_flag(
     "--ds_interval2", &Global_Physical_Variables::Ds_interval2);
 
+  // Switch to the old version of the code
+  CommandLineArgs::specify_command_line_flag("--old_version");
+
   // Restart file
   std::string restart_file;
   CommandLineArgs::specify_command_line_flag("--restart_file", &restart_file);
@@ -1633,6 +1661,7 @@ int main(int argc, char** argv)
 
   // Doc what has actually been specified on the command line
   CommandLineArgs::doc_specified_flags();
+
 
   // Now that we've read the opening angle in degrees, update the value in
   // radians
@@ -1645,10 +1674,6 @@ int main(int argc, char** argv)
   // to be located at the centre of the beam)
   unsigned n_element1 = 20;
   unsigned n_element2 = 20;
-
-  //  Aspect ratio to determine the length of the beam
-  //  first arm length = |q+0.5|, second arm length = |q-0.5|
-  // double q = 0.35;
 
   // Construct the problem
   ElasticBeamProblem problem(n_element1, n_element2);
