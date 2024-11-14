@@ -44,19 +44,14 @@ namespace Global_Physical_Variables
   /// Non-dimensional coefficient (FSI)
   double I = 0.0;
 
-  /// Angle between the two arms of the beam
-  double Alpha = 0.0;
+  /// 2nd Piola Kirchhoff pre-stress
+  double Sigma0 = 0.0;
 
 
   // These are parameters that can be set from the command line:
 
-  /// Aspect ratio: Don't change this on the fly; should only be assigned
-  /// once before the mesh is generated
-  /// first arm length = |q+0.5|, second arm length = |q-0.5|
-  double Q = 0.4;
-
   /// Initial value for theta_eq in the Newton solve
-  double Initial_value_for_theta_eq = 0.0;
+  double Initial_value_for_theta_eq = 1.57;
 
   /// Default value for desired ds
   double Ds_default = 1.0e-5;
@@ -73,7 +68,7 @@ namespace Global_Physical_Variables
   double Interval2_start = 0.07;
   double Interval2_end = 0.08;
 
-  // If the interval_ds is larger than the default, it will automatically
+  // If the interval_ds is smaller than the default, it will automatically
   // revert to using the default interval
 
   /// Value of ds for first interval
@@ -81,6 +76,10 @@ namespace Global_Physical_Variables
 
   /// Value of ds for second interval
   double Ds_interval2 = 10.0;
+
+  /// Weight between the fluid and pre-solid tractions
+  double Lambda = 1.0;
+
 
 } // namespace Global_Physical_Variables
 
@@ -159,7 +158,7 @@ public:
 
     // Loop over the nodes in the all mesh and add them as external Data
     // because they affect the traction and therefore the total drag
-    // and torque on the object
+    // and torque on the object.
     unsigned npointer = beam_mesh_pt.size();
     for (unsigned i = 0; i < npointer; i++)
     {
@@ -229,7 +228,6 @@ protected:
   // Fill in contribution to residuals
   void fill_in_contribution_to_residuals(Vector<double>& residuals)
   {
-    abort();
     // oomph_info << "ndof in element: " << residuals.size() << std::endl;
 
     // Get current total drag and torque
@@ -303,7 +301,11 @@ class HaoHermiteBeamElement : public virtual HermiteBeamElement
 public:
   /// Constructor: Initialise private member data
   HaoHermiteBeamElement()
-    : Rigid_body_element_pt(0), I_pt(0), Theta_initial_pt(0)
+    : Rigid_body_element_pt(0),
+      I_pt(0),
+      Lambda_pt(0),
+      Theta_initial_pt(0),
+      Sigma0_pt(0)
   {
   }
 
@@ -357,6 +359,12 @@ public:
   }
 
 
+  /// Pointer to weight between the fluid and pre-solid tractions
+  double*& lambda_pt()
+  {
+    return Lambda_pt;
+  }
+
   /// Pointer to initial angle
   void theta_initial_pt(const double* theta_initial_pt)
   {
@@ -374,6 +382,12 @@ public:
     {
       return *Theta_initial_pt;
     }
+  }
+
+  /// Pointer to 2nd Piola Kirchhoff pre-stress
+  double*& sigma0_pt()
+  {
+    return Sigma0_pt;
   }
 
 
@@ -563,7 +577,7 @@ public:
   }
 
 
-  // overloaded load_vector to apply the computed traction_0 (i.e. the
+  // Overloaded load_vector to apply the computed traction_0 (i.e. the
   // traction acting on the beam before its rigid body motion is applied)
   // including the non-dimensional coefficient I (FSI)
   void load_vector(const unsigned& intpt,
@@ -572,18 +586,78 @@ public:
                    const Vector<double>& N,
                    Vector<double>& load)
   {
-    /// Return local coordinate s[j] at the specified integration point.
+    // Return local coordinate s[j] at the specified integration point.
     Vector<double> s(1);
     unsigned j = 0;
     s[j] = integral_pt()->knot(intpt, j);
 
-    compute_slender_body_traction_on_beam_in_reference_configuration(s, load);
-    // load[0] = *(i_pt()) * load[0];
-    // load[1] = *(i_pt()) * load[1];
+    // Compute the fluid traction in the reference configuration
+    Vector<double> fluid_load(2);
+    compute_slender_body_traction_on_beam_in_reference_configuration(
+      s, fluid_load);
 
-    // Test! Give constant pressure to the beam
-    load[0] = 1.0e-7;
-    load[1] = 0.0;
+    // Pretraction got from Maple to bend the vertical straight beam to an
+    // asymmetric parabolic shape (like y=6*x^2)
+    Vector<double> pre_load(2);
+    pre_load[0] = 0.1333333333e-11 *
+                  (0.7715645465e11 * pow(xi[0], 0.8e1) -
+                   0.5189045485e12 * pow(xi[0], 0.7e1) +
+                   (0.1498072295e13 + 0.6961283948e11 * (*(sigma0_pt()))) *
+                     pow(xi[0], 0.6e1) +
+                   (-0.2451526102e13 - 0.3121140390e12 * (*(sigma0_pt()))) *
+                     pow(xi[0], 0.5e1) +
+                   (0.2498839888e13 + 0.6033228772e12 * (*(sigma0_pt())) +
+                    0.1000000000e1 * (*(h_pt())) * (*(h_pt()))) *
+                     pow(xi[0], 0.4e1) +
+                   (-0.1627250758e13 - 0.6414637085e12 * (*(sigma0_pt())) -
+                    0.2500000000e1 * (*(h_pt())) * (*(h_pt()))) *
+                     pow(xi[0], 0.3e1) +
+                   (-0.1687144498e10 * (*(h_pt())) * (*(h_pt())) +
+                    0.3953842955e12 * (*(sigma0_pt())) + 0.6606660890e12) *
+                     pow(xi[0], 0.2e1) +
+                   (0.5042953688e10 * (*(h_pt())) * (*(h_pt())) -
+                    0.1340455952e12 * (*(sigma0_pt())) - 0.1523856445e12) *
+                     xi[0] -
+                   0.2771784728e10 * (*(h_pt())) * (*(h_pt())) +
+                   0.1959287711e11 * (*(sigma0_pt())) + 0.1515781324e11) *
+                  pow(0.484240687e0 - 0.1104318522e1 * xi[0] +
+                        0.7389101899e0 * pow(xi[0], 0.2e1),
+                      -0.7e1 / 0.2e1) *
+                  (*(h_pt()));
+
+    pre_load[1] =
+      0.1260008926e-10 *
+      pow(0.484240687e0 - 0.1104318522e1 * xi[0] +
+            0.7389101899e0 * pow(xi[0], 0.2e1),
+          -0.1e1 / 0.2e1) *
+      (-0.7285593104e11 * pow(xi[0], 0.8e1) +
+       0.4313387503e12 * pow(xi[0], 0.7e1) +
+       (-0.1107820213e13 - 0.6573277963e11 * (*(sigma0_pt()))) *
+         pow(xi[0], 0.6e1) +
+       (0.1610154043e13 + 0.2947175190e12 * (*(sigma0_pt()))) *
+         pow(xi[0], 0.5e1) +
+       (-0.1439381715e13 - 0.5696950451e12 * (*(sigma0_pt())) +
+        0.9999999998e0 * (*(h_pt())) * (*(h_pt()))) *
+         pow(xi[0], 0.4e1) +
+       (0.7996652231e12 + 0.6057099940e12 * (*(sigma0_pt())) +
+        0.1311475410e1 * (*(h_pt())) * (*(h_pt()))) *
+         pow(xi[0], 0.3e1) +
+       (0.1593106952e10 * (*(h_pt())) * (*(h_pt())) -
+        0.3733464827e12 * (*(sigma0_pt())) - 0.2620217281e12) *
+         pow(xi[0], 0.2e1) +
+       (-0.2197221354e10 * (*(h_pt())) * (*(h_pt())) +
+        0.1265742015e12 * (*(sigma0_pt())) + 0.4300378534e11) *
+         xi[0] +
+       0.7008274151e9 * (*(h_pt())) * (*(h_pt())) -
+       0.1850081513e11 * (*(sigma0_pt())) - 0.1979074775e10) *
+      (*(h_pt())) *
+      pow(pow(xi[0], 0.2e1) - 0.1494523335e1 * xi[0] + 0.6553444440e0, -0.3e1);
+
+    // Assign the loading term to the beam equation
+    load[0] = *(lambda_pt()) * pre_load[0] +
+              *(i_pt()) * fluid_load[0] * (1.0 - *(lambda_pt()));
+    load[1] = *(lambda_pt()) * pre_load[1] +
+              *(i_pt()) * fluid_load[1] * (1.0 - *(lambda_pt()));
   }
 
 
@@ -834,6 +908,7 @@ public:
     }
   }
 
+
 private:
   /// Pointer to element that controls the rigid body motion
   RigidBodyElement* Rigid_body_element_pt;
@@ -841,9 +916,15 @@ private:
   /// Pointer to non-dimensional coefficient (FSI)
   double* I_pt;
 
+  /// Pointer to weight between the fluid and pre-solid tractions
+  double* Lambda_pt;
+
   /// Pointer to initial rotation of the element when it's in its (otherwise)
   /// undeformed configuration
   const double* Theta_initial_pt;
+
+  /// Pointer to 2nd Piola Kirchhoff pre-stress
+  double* Sigma0_pt;
 };
 
 
@@ -993,7 +1074,7 @@ class ElasticBeamProblem : public Problem
 public:
   /// Constructor: The arguments are the number of elements and the parameter to
   /// determine the length of the beam
-  ElasticBeamProblem(const unsigned& n_elem1, const unsigned& n_elem2);
+  ElasticBeamProblem(const unsigned& n_elem1, const double& L);
 
   /// Conduct a parameter study
   void parameter_study();
@@ -1037,18 +1118,13 @@ public:
 
 private:
   /// Pointer to geometric object that represents the beam's undeformed shape
-  GeomObject* Undef_beam_pt1;
-
-  GeomObject* Undef_beam_pt2;
+  GeomObject* Undef_beam_pt;
 
   /// Pointer to RigidBodyElement that actually contains the rigid body data
   RigidBodyElement* Rigid_body_element_pt;
 
-  /// Pointer to beam mesh (first arm)
-  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_first_arm_pt;
-
-  /// Pointer to beam mesh (second arm)
-  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_second_arm_pt;
+  /// Pointer to beam mesh
+  OneDLagrangianMesh<HaoHermiteBeamElement>* mesh_pt;
 
   /// Pointer to mesh containing the rigid body element
   Mesh* Rigid_body_element_mesh_pt;
@@ -1135,94 +1211,12 @@ public:
   }
 };
 
-//=========================================================================
-/// Steady, straight 1D line in 2D space with stretch_ratio
-///  \f[ x = 0.0 \f]
-///  \f[ y = \zeta*stretch_ratio  \f]
-//=========================================================================
-class NewStraightLineVertical : public GeomObject
-{
-public:
-  /// Constructor derives from GeomObject(1, 2)
-  /// Pass stretch_ratio to this class
-  NewStraightLineVertical(const double& stretch_ratio) : GeomObject(1, 2)
-  {
-    Stretch_ratio = stretch_ratio;
-  }
-
-  /// Broken copy constructor
-  NewStraightLineVertical(const NewStraightLineVertical& dummy) = delete;
-
-  /// Broken assignment operator
-  void operator=(const NewStraightLineVertical&) = delete;
-
-  /// Position Vector at Lagrangian coordinate zeta
-  void position(const Vector<double>& zeta, Vector<double>& r) const
-  {
-    r[0] = 0.0;
-    r[1] = zeta[0] * Stretch_ratio;
-  }
-
-
-  /// Derivative of position Vector w.r.t. to coordinates:
-  /// \f$ \frac{dR_i}{d \zeta_\alpha}\f$ = drdzeta(alpha,i).
-  /// Evaluated at current time.
-  virtual void dposition(const Vector<double>& zeta,
-                         DenseMatrix<double>& drdzeta) const
-  {
-    // Tangent vector
-    drdzeta(0, 0) = 0.0;
-    drdzeta(0, 1) = Stretch_ratio;
-  }
-
-
-  /// 2nd derivative of position Vector w.r.t. to coordinates:
-  /// \f$ \frac{d^2R_i}{d \zeta_\alpha d \zeta_\beta}\f$ =
-  /// ddrdzeta(alpha,beta,i). Evaluated at current time.
-  virtual void d2position(const Vector<double>& zeta,
-                          RankThreeTensor<double>& ddrdzeta) const
-  {
-    // Derivative of tangent vector
-    ddrdzeta(0, 0, 0) = 0.0;
-    ddrdzeta(0, 0, 1) = 0.0;
-  }
-
-
-  /// Posn Vector and its  1st & 2nd derivatives
-  /// w.r.t. to coordinates:
-  /// \f$ \frac{dR_i}{d \zeta_\alpha}\f$ = drdzeta(alpha,i).
-  /// \f$ \frac{d^2R_i}{d \zeta_\alpha d \zeta_\beta}\f$ =
-  /// ddrdzeta(alpha,beta,i).
-  /// Evaluated at current time.
-  virtual void d2position(const Vector<double>& zeta,
-                          Vector<double>& r,
-                          DenseMatrix<double>& drdzeta,
-                          RankThreeTensor<double>& ddrdzeta) const
-  {
-    // Position Vector
-    r[0] = 0.0;
-    r[1] = zeta[0] * Stretch_ratio;
-
-    // Tangent vector
-    drdzeta(0, 0) = 0.0;
-    drdzeta(0, 1) = Stretch_ratio;
-
-    // Derivative of tangent vector
-    ddrdzeta(0, 0, 0) = 0.0;
-    ddrdzeta(0, 0, 1) = 0.0;
-  }
-
-private:
-  /// Define the length of the beam
-  double Stretch_ratio;
-};
-
 
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
 //======================================================================
-ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
-                                       const unsigned& n_elem2)
+ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
+                                       const double& length)
 {
   // Drift speed and acceleration of horizontal motion
   double v = 0.0;
@@ -1249,85 +1243,73 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
 
   // Set the undeformed beam shape for two arms (in the reference orientation
   // before applying the rigid body motion)
-  // Undef_beam_pt = new StraightLineVertical();
-
-  // Aspect ratio to determine the length of the beam
-  // first arm length = |q+0.5|, second arm length = |q-0.5|
-  double* q_pt = &Global_Physical_Variables::Q;
-
-  // Set for test! Switch between old and new code
-  bool old_version = false;
-  if (CommandLineArgs::command_line_flag_has_been_set("--old_version"))
-  {
-    old_version = true;
-  }
-
-  // Assign values to the stretch_ratio and length_1 for different versions of
-  // the code
-  double stretch_ratio = 0.0;
-  double length_1 = 0.0;
-  if (old_version == false)
-  {
-    // New code
-    stretch_ratio = *q_pt + 0.5;
-    length_1 = 1.0;
-  }
-  else
-  {
-    // Old code
-    stretch_ratio = 1.0;
-    length_1 = *q_pt + 0.5;
-  }
-  // Set the undeformed beam shape
-  Undef_beam_pt1 = new NewStraightLineVertical(stretch_ratio);
-  // Undef_beam_pt2 = new StraightLineVertical_new(fabs(*stretch_ratio_pt -
-  // 0.5));
+  Undef_beam_pt = new StraightLineVertical();
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
-  // nodes. (first arm)
-  // double length_1 = fabs(*q_pt + 0.5);
-  // double length_1 = 1.0;
-  Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem1, length_1, Undef_beam_pt1);
+  // nodes.
+  mesh_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+    n_elem, length, Undef_beam_pt);
 
-  // // Create the (Lagrangian!) mesh, using the StraightLineVertical object
-  // // Undef_beam_pt to specify the initial (Eulerian) position of the
-  // // nodes. (second arm)
-  // // double length_2 = fabs(*q_pt - 0.5);
-  // double length_2 = 1.0;
-  // Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-  //   n_elem2, length_2, Undef_beam_pt2);
 
-  // // Pass the pointer of the mesh to the RigidBodyElement class
-  // // so it can work out the drag and torque on the entire structure
-  // Vector<SolidMesh*> Beam_mesh_pt(2);
-  // Beam_mesh_pt[0] = Beam_mesh_first_arm_pt;
-  // Beam_mesh_pt[1] = Beam_mesh_second_arm_pt;
-  // Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
+  // Pass the pointer of the mesh to the RigidBodyElement class
+  // so it can work out the drag and torque on the entire structure
+  Vector<SolidMesh*> Beam_mesh_pt(1);
+  Beam_mesh_pt[0] = mesh_pt;
+  Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
+
 
   // Build the problem's global mesh
-  add_sub_mesh(Beam_mesh_first_arm_pt);
-  // add_sub_mesh(Beam_mesh_second_arm_pt);
-  // add_sub_mesh(Rigid_body_element_mesh_pt);
+  add_sub_mesh(mesh_pt);
   build_global_mesh();
 
-  // Set the boundary conditions: One end of the beam is clamped in space
+  // Loop over nodes in mesh and assign values to positions and slopes
+  unsigned n_node = mesh_pt->nnode();
+  for (unsigned j = 0; j < n_node; j++)
+  {
+    // Get the lagrangian coordinate in this node
+    Vector<double> zeta(1);
+    zeta[0] = mesh_pt->node_pt(j)->xi(0);
+
+    // Position
+    mesh_pt->node_pt(j)->x_gen(0, 0) =
+      0.4297994268 * zeta[0] - 0.1150331792 * zeta[0] * zeta[0] + 1.0e-11;
+    mesh_pt->node_pt(j)->x_gen(0, 1) =
+      -0.5472779369 * zeta[0] + 0.4141194455 * zeta[0] * zeta[0];
+
+    // Slope
+    // Jacobian mapping the Lagrangian coordinate and local coordinate dxi/ds
+    double dxi_ds = mesh_pt->node_pt(j)->lagrangian_position_gen(1, 0);
+
+    // Assign values to slopes which are evaluated from the shape expression
+    mesh_pt->node_pt(j)->x_gen(1, 0) =
+      (0.4297994268 - 0.2300663584 * zeta[0]) * dxi_ds;
+    mesh_pt->node_pt(j)->x_gen(1, 1) =
+      (-0.5472779369 + 0.8282388910 * zeta[0]) * dxi_ds;
+  }
+
+
+  // Set the boundary conditions:
   // Pin displacements in both x and y directions, and pin the derivative of
-  // position Vector w.r.t. to coordinates in x direction. (first arm)
-  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
-  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
-  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
+  // position Vector w.r.t. to coordinates in x and y directions.
+  for (unsigned b = 0; b < 2; b++)
+  {
+    mesh_pt->boundary_node_pt(b, 0)->pin_position(0);
+    mesh_pt->boundary_node_pt(b, 0)->pin_position(1);
+    mesh_pt->boundary_node_pt(b, 0)->pin_position(1, 0);
+    mesh_pt->boundary_node_pt(b, 0)->pin_position(1, 1);
+  }
+
 
   // Find number of elements in the mesh (first arm)
-  unsigned n_element = Beam_mesh_first_arm_pt->nelement();
+  unsigned n_element = mesh_pt->nelement();
 
   // Loop over the elements to set physical parameters etc. (first arm)
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
-    HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
-      Beam_mesh_first_arm_pt->element_pt(e));
+    HaoHermiteBeamElement* elem_pt =
+      dynamic_cast<HaoHermiteBeamElement*>(mesh_pt->element_pt(e));
 
     // Pass the pointer of RigidBodyElement to the each element
     // so we can work out the rigid body motion
@@ -1336,47 +1318,14 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
     // Set physical parameters for each element:
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->i_pt() = &Global_Physical_Variables::I;
-
-    // Note: no rotation!
+    elem_pt->lambda_pt() = &Global_Physical_Variables::Lambda;
+    elem_pt->sigma0_pt() = &Global_Physical_Variables::Sigma0;
 
     // Set the undeformed shape for each element
-    elem_pt->undeformed_beam_pt() = Undef_beam_pt1;
+    elem_pt->undeformed_beam_pt() = Undef_beam_pt;
 
   } // end of loop over elements
 
-
-  // // Set the boundary conditions: One end of the beam is clamped in space
-  // // Pin displacements in both x and y directions, and pin the derivative of
-  // // position Vector w.r.t. to coordinates in x direction. (second arm)
-  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
-  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
-  // Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
-
-  // // Find number of elements in the mesh (second arm)
-  // n_element = Beam_mesh_second_arm_pt->nelement();
-
-  // // Loop over the elements to set physical parameters etc. (second arm)
-  // for (unsigned e = 0; e < n_element; e++)
-  // {
-  //   // Upcast to the specific element type
-  //   HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
-  //     Beam_mesh_second_arm_pt->element_pt(e));
-
-  //   // Pass the pointer of RigidBodyElement to the each element
-  //   // so we can work out the rigid body motion
-  //   elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
-
-  //   // Set physical parameters for each element:
-  //   elem_pt->h_pt() = &Global_Physical_Variables::H;
-  //   elem_pt->i_pt() = &Global_Physical_Variables::I;
-
-  //   // Rotate by opening angle
-  //   elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
-
-  //   // Set the undeformed shape for each element
-  //   elem_pt->undeformed_beam_pt() = Undef_beam_pt2;
-
-  // } // end of loop over elements
 
   // Assign the global and local equation numbers
   cout << "# of dofs " << assign_eqn_numbers() << std::endl;
@@ -1391,10 +1340,10 @@ void ElasticBeamProblem::parameter_study()
 {
   // Over-ride the default maximum value for the residuals
   // Problem::Max_residuals = 1.0e10;
-  // Problem::Max_newton_iterations = 20;
+  Problem::Max_newton_iterations = 100;
   Problem::Always_take_one_newton_step = true;
-  Problem::Scale_arc_length = false;
-  Problem::Theta_squared = 0.3;
+  // Problem::Scale_arc_length = false;
+  // Problem::Theta_squared = 0.2;
 
   // Create label for output
   DocInfo doc_info;
@@ -1404,198 +1353,90 @@ void ElasticBeamProblem::parameter_study()
   doc_info.set_directory("RESLT");
 
   // Output file stream used for writing results
-  ofstream file;
+  ofstream file1;
 
   // String used for the filename
   char filename[100];
 
-  // // Write the file name
-  // sprintf(filename,
-  //         "RESLT/elastic_beam_I_theta_s_%.3f_alpha_%.3fpi_initial_%.2f.dat",
-  //         Global_Physical_Variables::Q,
-  //         Global_Physical_Variables::Alpha / acos(-1.0),
-  //         Global_Physical_Variables::Initial_value_for_theta_eq);
-  // file.open(filename);
+  Global_Physical_Variables::Lambda = 1.0;
 
-  // Counter to record the iterations for the while loop
-  unsigned counter = 0;
-
-  // Initialize the value of backup for dofs
-  DoubleVector dofs_backup;
-
-
-  /////////////////////////////////////////////////////////////////////////////////
-  // TEST!(temporarily set here for test!)
-
-  // Solve the system
+  // Shape the U-shape and only establish the mesh for the solid beam
+  // Solve the system and get the U shape
   newton_solve();
 
-  // Document the solution (first arm)
-  ofstream file1;
-  sprintf(filename,
-          "RESLT/beam_first_arm_initial_%.2f_%d.dat",
-          Global_Physical_Variables::Initial_value_for_theta_eq,
-          counter);
+  // Document the shape data of the "undeformed" U shape
+  sprintf(filename, "RESLT/U_shape.dat");
   file1.open(filename);
-  Beam_mesh_first_arm_pt->output(file1, 5);
+  mesh_pt->output(file1, 5);
   file1.close();
 
-  // // Document the solution (second arm)
-  // sprintf(filename,
-  //         "RESLT/beam_second_arm_initial_%.2f_%d.dat",
-  //         Global_Physical_Variables::Initial_value_for_theta_eq,
-  //         counter);
-  // file2.open(filename);
-  // Beam_mesh_second_arm_pt->output(file2, 5);
-  // file2.close();
 
-  // Ignore the following code
-  exit(0);
+  //-------------------------------------------------------------------------
+  // Combine with the fluid mesh (adding additional 3 equilibrium equations)
 
-  /////////////////////////////////////////////////////////////////////////////////
+  // Get rid of the previous submeshes
+  // flush_sub_meshes();
+  // add_sub_mesh(mesh_pt);
+
+  // Add the fluid mesh
+  add_sub_mesh(Rigid_body_element_mesh_pt);
+
+  // rebuild the global_mesh containing solid beam mesh and fluid mesh
+  rebuild_global_mesh();
+
+  // Re-assign the global and local equation numbers
+  cout << "New # of dofs " << assign_eqn_numbers() << std::endl;
 
 
-  // Loop over different values for Non-dimensional coefficient (FSI) I by
-  // using arclength increment
-  // The loop stops when I becomes negative since only positive values of I are
-  // considered.
-  double I_backup = 0.0;
-  double ds = 0.0;
-  while (Global_Physical_Variables::I >= 0.0)
+  Global_Physical_Variables::I = 0.0;
+
+  // Output file stream used for writing results
+  ofstream file;
+
+  // Write the file name
+  sprintf(filename,
+          "RESLT/elastic_beam_I_%.3f_initial_%.2f.dat",
+          Global_Physical_Variables::I,
+          Global_Physical_Variables::Initial_value_for_theta_eq);
+  file.open(filename);
+
+  // Make continuation for lambda from 1.0 to 0.0, so that the fluid traction
+  // takes over the loading term of the beam equation
+  for (unsigned i = 0; i <= 0; i++)
   {
-    // Get the dofs
-    Problem::get_dofs(dofs_backup);
+    Global_Physical_Variables::Lambda = 1.0;
 
-    try
-    {
-      if (counter == 0)
-      {
-        // Solve the system
-        newton_solve();
-      }
-      else
-      {
-        // Backup the FSI coefficient I
-        I_backup = Global_Physical_Variables::I;
+    // Document Lambda
+    file << Global_Physical_Variables::Lambda << "  ";
 
-        // To prevent large solution jumps in critical intervals for I, try to
-        // reduce ds specifically in those areas for smoother and more precise
-        // results
+    // Solve the system (solid and fluid meshes)
+    newton_solve();
 
-        // First I interval [Interval1_start,Interval1_end]
-        if (Global_Physical_Variables::Ds_default >
-              Global_Physical_Variables::Ds_interval1 &&
-            Global_Physical_Variables::I >=
-              Global_Physical_Variables::Interval1_start &&
-            Global_Physical_Variables::I <=
-              Global_Physical_Variables::Interval1_end)
-        {
-          ds = Global_Physical_Variables::Ds_interval1;
-        }
-        // Second I interval [Interval2_start,Interval2_end]
-        else if (Global_Physical_Variables::Ds_default >
-                   Global_Physical_Variables::Ds_interval2 &&
-                 Global_Physical_Variables::I >=
-                   Global_Physical_Variables::Interval2_start &&
-                 Global_Physical_Variables::I <=
-                   Global_Physical_Variables::Interval2_end)
-        {
-          ds = Global_Physical_Variables::Ds_interval2;
-        }
-        else
-        {
-          // Use the default one
-          ds = Global_Physical_Variables::Ds_default;
-        }
+    // Document the solution of Theta_eq, Theta_eq_orientation
+    Rigid_body_element_pt->output(file);
 
-        /// Use the arclength solve
-        ds = arc_length_step_solve(&Global_Physical_Variables::I, ds);
-      }
+    // Document maximum residuals at start and after each newton iteration
+    file << Problem::Max_res[0] << "  ";
 
-      // Document I
-      file << Global_Physical_Variables::I << "  ";
+    // Document actual number of Newton iterations taken during the most
+    // recent iteration
+    file << Problem::Nnewton_iter_taken << "  ";
 
-      // Document the solution of Theta_eq, Theta_eq_orientation
-      Rigid_body_element_pt->output(file);
+    // Step label
+    file << i << std::endl;
 
-      // Document maximum residuals at start and after each newton iteration
-      file << Problem::Max_res[0] << "  ";
+    // Document the shape data
+    sprintf(filename,
+            "RESLT/beam_initial_%.2f_%d.dat",
+            Global_Physical_Variables::Initial_value_for_theta_eq,
+            i);
+    file1.open(filename);
+    mesh_pt->output(file1, 5);
+    file1.close();
 
-      // Document actual number of Newton iterations taken during the most
-      // recent iteration
-      file << Problem::Nnewton_iter_taken << "  ";
 
-      // Step label
-      file << counter << std::endl;
-
-      // Output file stream used for writing results
-      ofstream file1;
-      ofstream file2;
-      ofstream file3;
-
-      // Document the solution (first arm)
-      sprintf(filename,
-              "RESLT/beam_first_arm_initial_%.2f_%d.dat",
-              Global_Physical_Variables::Initial_value_for_theta_eq,
-              counter);
-      file1.open(filename);
-      Beam_mesh_first_arm_pt->output(file1, 5);
-      file1.close();
-
-      // Document the solution (second arm)
-      sprintf(filename,
-              "RESLT/beam_second_arm_initial_%.2f_%d.dat",
-              Global_Physical_Variables::Initial_value_for_theta_eq,
-              counter);
-      file2.open(filename);
-      Beam_mesh_second_arm_pt->output(file2, 5);
-      file2.close();
-
-      // Write restart file
-      sprintf(filename, "RESLT/restart%i.dat", counter);
-      file2.open(filename);
-      dump_it(file2);
-      file2.close();
-
-      // Bump counter for output
-      counter = counter + 1;
-    }
-    catch (...)
-    {
-      // If the initial values are not appropriate, the newton method cannot
-      // converge at the starting point I=0.0
-      if (counter == 0)
-      {
-        oomph_info
-          << "Initial values for I=0.0 are not appropriate. Please modify them!"
-          << std::endl;
-        break;
-      }
-      else
-      {
-        // Check if default ds is small enough
-        if (Global_Physical_Variables::Ds_default < 1.0e-8)
-        {
-          // Since the default is not small enough, assign a smaller value
-          Global_Physical_Variables::Ds_default = 1.0e-8;
-
-          // Since the newton method cannot converge in this turn, overwrite the
-          // failed I value
-          Global_Physical_Variables::I = I_backup;
-        }
-        else
-        {
-          // If default ds is already small enough, it means there is no
-          // solution any more
-          break;
-        }
-      }
-
-      // Reset the dofs
-      Problem::set_dofs(dofs_backup);
-    }
+    file.close();
   }
-  file.close();
 
 
 } // end of parameter study
@@ -1607,15 +1448,6 @@ int main(int argc, char** argv)
 {
   // Store command line arguments
   CommandLineArgs::setup(argc, argv);
-
-  // Aspect ratio
-  CommandLineArgs::specify_command_line_flag("--q",
-                                             &Global_Physical_Variables::Q);
-
-  // Opening angle in degrees
-  double alpha_in_degrees = 45.0;
-  CommandLineArgs::specify_command_line_flag("--alpha_in_degrees",
-                                             &alpha_in_degrees);
 
   // Initial value for theta_eq in the Newton solve
   CommandLineArgs::specify_command_line_flag(
@@ -1649,9 +1481,6 @@ int main(int argc, char** argv)
   CommandLineArgs::specify_command_line_flag(
     "--ds_interval2", &Global_Physical_Variables::Ds_interval2);
 
-  // Switch to the old version of the code
-  CommandLineArgs::specify_command_line_flag("--old_version");
-
   // Restart file
   std::string restart_file;
   CommandLineArgs::specify_command_line_flag("--restart_file", &restart_file);
@@ -1663,20 +1492,18 @@ int main(int argc, char** argv)
   CommandLineArgs::doc_specified_flags();
 
 
-  // Now that we've read the opening angle in degrees, update the value in
-  // radians
-  Global_Physical_Variables::Alpha = 4.0 * atan(1.0) / 180.0 * alpha_in_degrees;
-
   // Set the non-dimensional thickness
   Global_Physical_Variables::H = 0.01;
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
-  unsigned n_element1 = 20;
-  unsigned n_element2 = 20;
+  unsigned n_element = 20;
+
+  // Set the length of domain
+  double L = 3.736308338;
 
   // Construct the problem
-  ElasticBeamProblem problem(n_element1, n_element2);
+  ElasticBeamProblem problem(n_element, L);
 
   // Do the restart?
   if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
