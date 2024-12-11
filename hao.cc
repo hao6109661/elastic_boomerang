@@ -33,178 +33,6 @@
 using namespace std;
 using namespace oomph;
 
-
-//========= start_of_point_load_wrapper==============================
-/// Class to impose point load to (wrapped) beam element
-//=====================================================================
-template<class ELEMENT>
-class BeamPointLoadElement : public virtual ELEMENT
-{
-public:
-  /// Constructor: Initialise private member data
-  BeamPointLoadElement()
-    : S_point_load_pt(0), Point_load_pt(0), Point_moment_pt(0), Lambda_pt(0)
-  {
-  }
-
-  /// Destructor (empty)
-  ~BeamPointLoadElement() {}
-
-
-  /// Set local coordinate and magnitude of point load
-  // include "bending" term too and tidy up terminology);
-  // also pass pointers rather than actual values.
-  void setup(const Vector<double>* s_point_load_pt,
-             const Vector<double>* point_load_pt,
-             const Vector<double>* point_moment_pt,
-             const double* lambda_pt)
-  {
-    S_point_load_pt = s_point_load_pt;
-    Point_load_pt = point_load_pt;
-    Point_moment_pt = point_moment_pt;
-    Lambda_pt = lambda_pt;
-  }
-
-  /// Add the element's contribution to its residual vector (wrapper)
-  void fill_in_contribution_to_residuals(Vector<double>& residuals)
-  {
-    // Call the generic residuals function
-    ELEMENT::fill_in_contribution_to_residuals(residuals);
-
-    // Add point load contribution
-    fill_in_point_load_contribution_to_residuals(residuals);
-  }
-
-
-  /// Add the element's contribution to its residual vector and
-  /// element Jacobian matrix (wrapper)
-  void fill_in_contribution_to_jacobian(Vector<double>& residuals,
-                                        DenseMatrix<double>& jacobian)
-  {
-    // Call the generic routine
-    ELEMENT::fill_in_contribution_to_jacobian(residuals, jacobian);
-
-    // Add point load contribution (doesn't (currently) depend
-    // on displacements hierher think about this in fsi context)
-    fill_in_point_load_contribution_to_residuals(residuals);
-  }
-
-
-private:
-  /// Add the point load contribution to the residual vector
-  void fill_in_point_load_contribution_to_residuals(Vector<double>& residuals)
-  {
-    // No further action
-    if (S_point_load_pt == 0) return;
-
-    // Set the dimension of the global coordinates
-    const unsigned n_dim = this->Undeformed_beam_pt->ndim();
-
-    // Set the number of lagrangian coordinates
-    const unsigned n_lagrangian = this->Undeformed_beam_pt->nlagrangian();
-
-    // Find out how many nodes there are
-    const unsigned n_node = this->nnode();
-
-    // Find out how many positional dofs there are
-    const unsigned n_position_type = this->nnodal_position_type();
-
-    // Integer to store the local equation number
-    int local_eqn = 0;
-
-    // Set up memory for the shape functions and derivs.
-    // hierher do we need all of these?
-
-    // # of nodes, # of positional dofs
-    Shape psi(n_node, n_position_type);
-
-    // # of nodes, # of positional dofs, # of lagrangian coords (for deriv)
-    DShape dpsidxi(n_node, n_position_type, n_lagrangian);
-
-    // # of nodes, # of positional dofs, # of derivs)
-    DShape d2psidxi(n_node, n_position_type, n_lagrangian);
-
-    // Get shape functions and derivatives
-    double J =
-      this->d2shape_lagrangian(*S_point_load_pt, psi, dpsidxi, d2psidxi);
-
-
-    // Loop over the number of nodes
-    for (unsigned n = 0; n < n_node; n++)
-    {
-      // Loop over the type of degree of freedom
-      for (unsigned k = 0; k < n_position_type; k++)
-      {
-        // Loop over the coordinate directions
-        for (unsigned i = 0; i < n_dim; i++)
-        {
-          // Loop over the number of lagrangian coords
-          for (unsigned j = 0; j < n_lagrangian; j++)
-          {
-            // Find the equation number
-            local_eqn = this->position_local_eqn(n, k, i);
-
-            // If it's not a boundary condition
-            if (local_eqn >= 0)
-            {
-              // Point load
-              residuals[local_eqn] +=
-                (*Lambda_pt) * (*Point_load_pt)[i] * psi(n, k) +
-                (*Lambda_pt) * (*Point_moment_pt)[i] * dpsidxi(n, k, j);
-
-              // oomph_info << "lambda=" << *Lambda_pt << std::endl;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  /// Local coordinates of point at which point load is applied
-  const Vector<double>* S_point_load_pt;
-
-  /// Magnitude of point load
-  const Vector<double>* Point_load_pt;
-
-  /// Magnitude of point moment
-  const Vector<double>* Point_moment_pt;
-
-  /// Continjuation parametr
-  const double* Lambda_pt;
-};
-
-
-//=======================================================================
-/// Face geometry for element is the same as that for the underlying
-/// wrapped element
-//=======================================================================
-template<class ELEMENT>
-class FaceGeometry<BeamPointLoadElement<ELEMENT>>
-  : public virtual FaceGeometry<ELEMENT>
-{
-public:
-  FaceGeometry() : FaceGeometry<ELEMENT>() {}
-};
-
-
-//=======================================================================
-/// Face geometry of the Face Geometry for element is the same as
-/// that for the underlying wrapped element
-//=======================================================================
-template<class ELEMENT>
-class FaceGeometry<FaceGeometry<BeamPointLoadElement<ELEMENT>>>
-  : public virtual FaceGeometry<FaceGeometry<ELEMENT>>
-{
-public:
-  FaceGeometry() : FaceGeometry<FaceGeometry<ELEMENT>>() {}
-};
-
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-
 //========start_of_namespace========================
 /// Namespace for physical parameters
 //==================================================
@@ -216,118 +44,19 @@ namespace Global_Physical_Variables
   /// Non-dimensional coefficient (FSI)
   double I = 0.0;
 
-  /// 2nd Piola Kirchhoff pre-stress
-  double Sigma0 = 0.0;
-
-  /// Load function: Apply a constant external pressure to the beam
-  void load(const Vector<double>& xi,
-            const Vector<double>& x,
-            const Vector<double>& N,
-            Vector<double>& load)
-  {
-    // Traction is obtained from Maple.
-    load[0] =
-      0.1333333333e-11 *
-      (0.7715645465e11 * pow(xi[0], 0.8e1) -
-       0.5189045485e12 * pow(xi[0], 0.7e1) +
-       (0.1498072295e13 + 0.6961283948e11 * Sigma0) * pow(xi[0], 0.6e1) +
-       (-0.2451526102e13 - 0.3121140390e12 * Sigma0) * pow(xi[0], 0.5e1) +
-       (0.2498839888e13 + 0.6033228772e12 * Sigma0 + 0.1000000000e1 * H * H) *
-         pow(xi[0], 0.4e1) +
-       (-0.1627250758e13 - 0.6414637085e12 * Sigma0 - 0.2500000000e1 * H * H) *
-         pow(xi[0], 0.3e1) +
-       (-0.1687144498e10 * H * H + 0.3953842955e12 * Sigma0 + 0.6606660890e12) *
-         pow(xi[0], 0.2e1) +
-       (0.5042953688e10 * H * H - 0.1340455952e12 * Sigma0 - 0.1523856445e12) *
-         xi[0] -
-       0.2771784728e10 * H * H + 0.1959287711e11 * Sigma0 + 0.1515781324e11) *
-      pow(0.484240687e0 - 0.1104318522e1 * xi[0] +
-            0.7389101899e0 * pow(xi[0], 0.2e1),
-          -0.7e1 / 0.2e1) *
-      H;
-
-    load[1] =
-      0.1260008926e-10 *
-      pow(0.484240687e0 - 0.1104318522e1 * xi[0] +
-            0.7389101899e0 * pow(xi[0], 0.2e1),
-          -0.1e1 / 0.2e1) *
-      (-0.7285593104e11 * pow(xi[0], 0.8e1) +
-       0.4313387503e12 * pow(xi[0], 0.7e1) +
-       (-0.1107820213e13 - 0.6573277963e11 * Sigma0) * pow(xi[0], 0.6e1) +
-       (0.1610154043e13 + 0.2947175190e12 * Sigma0) * pow(xi[0], 0.5e1) +
-       (-0.1439381715e13 - 0.5696950451e12 * Sigma0 + 0.9999999998e0 * H * H) *
-         pow(xi[0], 0.4e1) +
-       (0.7996652231e12 + 0.6057099940e12 * Sigma0 + 0.1311475410e1 * H * H) *
-         pow(xi[0], 0.3e1) +
-       (0.1593106952e10 * H * H - 0.3733464827e12 * Sigma0 - 0.2620217281e12) *
-         pow(xi[0], 0.2e1) +
-       (-0.2197221354e10 * H * H + 0.1265742015e12 * Sigma0 + 0.4300378534e11) *
-         xi[0] +
-       0.7008274151e9 * H * H - 0.1850081513e11 * Sigma0 - 0.1979074775e10) *
-      H *
-      pow(pow(xi[0], 0.2e1) - 0.1494523335e1 * xi[0] + 0.6553444440e0, -0.3e1);
-  }
-
-  /// Point load
-  Vector<double> Point_load;
-
-  /// Function to compute Point load (computed from Maple)
-  /// xi is the Lagrangian coordinate
-  void setup_point_load(const double& xi)
-  {
-    Point_load.resize(2);
-    Point_load[0] =
-      -(-0.1053440026e-11 * (xi - 0.1868154170e1) *
-        (0.8068725903e11 * pow(xi, 0.6e1) - 0.3617669746e12 * pow(xi, 0.5e1) +
-         (0.5901053723e12 + 0.2183953074e12 * Sigma0) * pow(xi, 0.4e1) +
-         (-0.4171146420e12 - 0.6527937663e12 * Sigma0) * pow(xi, 0.3e1) +
-         (0.9999999999e0 * H * H + 0.7125632246e11 + 0.7740560613e12 * Sigma0) *
-           pow(xi, 0.2e1) +
-         (0.5853202759e11 - 0.4278047680e12 * Sigma0) * xi +
-         0.1764350979e10 * H * H - 0.2418798154e11 + 0.9379561739e11 * Sigma0) *
-        pow(pow(xi, 0.2e1) - 0.1494523335e1 * xi + 0.6553444440e0, -0.2e1));
-
-    Point_load[1] =
-      -(0.3792384098e-11 *
-        (0.8068725903e11 * pow(xi, 0.6e1) - 0.3617669746e12 * pow(xi, 0.5e1) +
-         (0.5901053726e12 + 0.2183953074e12 * Sigma0) * pow(xi, 0.4e1) +
-         (-0.4171146420e12 - 0.6527937673e12 * Sigma0) * pow(xi, 0.3e1) +
-         (0.9999999999e0 * H * H + 0.7125632233e11 + 0.7740560616e12 * Sigma0) *
-           pow(xi, 0.2e1) +
-         (0.5853202776e11 - 0.4278047680e12 * Sigma0) * xi +
-         0.1764350979e10 * H * H - 0.2418798148e11 + 0.9379561716e11 * Sigma0) *
-        (xi - 0.6607730486e0) *
-        pow(pow(xi, 0.2e1) - 0.1494523336e1 * xi + 0.6553444433e0, -0.2e1));
-  }
-
-  /// Point load
-  Vector<double> Point_moment;
-
-  // Function to compute Point moment (computed from Maple)
-  /// xi is the Lagrangian coordinate
-  void setup_point_moment(const double& xi)
-  {
-    Point_moment.resize(2);
-    Point_moment[0] = -(
-      -0.1905499057e0 * H * H * (xi - 0.6607730486e0) /
-      (0.581088825e1 - 0.1325182227e2 * xi + 0.8866922278e1 * pow(xi, 0.2e1)));
-
-    Point_moment[1] = -(-0.2646526466e9 * (xi - 0.1868154170e1) * H * H /
-                        (0.2905444126e11 - 0.6625911130e11 * xi +
-                         0.4433461139e11 * pow(xi, 0.2e1)));
-  }
-
-  /// Location of point load (right end)
-  Vector<double> S_point_load{1.0};
-
-  /// Continjuation parametr
-  double Lambda = 0.0;
+  /// Angle between the two arms of the beam
+  double Alpha = 0.0;
 
 
   // These are parameters that can be set from the command line:
 
+  /// Aspect ratio: Don't change this on the fly; should only be assigned
+  /// once before the mesh is generated
+  /// first arm length = |q+0.5|, second arm length = |q-0.5|
+  double Q = 0.4;
+
   /// Initial value for theta_eq in the Newton solve
-  double Initial_value_for_theta_eq = 1.57;
+  double Initial_value_for_theta_eq = 0.0;
 
   /// Default value for desired ds
   double Ds_default = 1.0e-5;
@@ -522,21 +251,21 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          residuals[eqn_number] += sum_total_drag[0];
+          residuals[eqn_number] = sum_total_drag[0];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::V;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          residuals[eqn_number] += sum_total_drag[1];
+          residuals[eqn_number] = sum_total_drag[1];
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::U0;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          residuals[eqn_number] += sum_total_torque;
+          residuals[eqn_number] = sum_total_torque;
           // internal_data_pt(i)->value(j)-
           // Global_Physical_Variables::Theta_eq;
         }
@@ -574,11 +303,7 @@ class HaoHermiteBeamElement : public virtual HermiteBeamElement
 public:
   /// Constructor: Initialise private member data
   HaoHermiteBeamElement()
-    : Rigid_body_element_pt(0),
-      I_pt(0),
-      Lambda_pt(0),
-      Theta_initial_pt(0),
-      Sigma0_pt(0)
+    : Rigid_body_element_pt(0), I_pt(0), Theta_initial_pt(0)
   {
   }
 
@@ -632,12 +357,6 @@ public:
   }
 
 
-  /// Pointer to weight between the fluid and pre-solid tractions
-  double*& lambda_pt()
-  {
-    return Lambda_pt;
-  }
-
   /// Pointer to initial angle
   void theta_initial_pt(const double* theta_initial_pt)
   {
@@ -656,6 +375,7 @@ public:
       return *Theta_initial_pt;
     }
   }
+
 
   /// Compute the element's contribution to the (\int r ds) and length of beam
   void compute_contribution_to_int_r_and_length(Vector<double>& int_r,
@@ -843,7 +563,7 @@ public:
   }
 
 
-  // Overloaded load_vector to apply the computed traction_0 (i.e. the
+  // overloaded load_vector to apply the computed traction_0 (i.e. the
   // traction acting on the beam before its rigid body motion is applied)
   // including the non-dimensional coefficient I (FSI)
   void load_vector(const unsigned& intpt,
@@ -852,30 +572,14 @@ public:
                    const Vector<double>& N,
                    Vector<double>& load)
   {
-    // Return local coordinate s[j] at the specified integration point.
+    /// Return local coordinate s[j] at the specified integration point.
     Vector<double> s(1);
     unsigned j = 0;
     s[j] = integral_pt()->knot(intpt, j);
 
-    // Compute the fluid traction in the reference configuration
-    Vector<double> fluid_load(2);
-    compute_slender_body_traction_on_beam_in_reference_configuration(
-      s, fluid_load);
-
-    // Call the load function in the namespace used to compute the solid
-    // traction
-    (*load_vector_fct_pt())(xi, x, N, load);
-
-    /*     oomph_info << "fluid_load_1=" << fluid_load[0] << std::endl;
-        oomph_info << "fluid_load_2=" << fluid_load[1] << std::endl;
-        oomph_info << "load_1=" << load[0] << std::endl;
-        oomph_info << "load_2=" << load[1] << std::endl; */
-
-    // Assign the loading term to the beam equation
-    load[0] = *(lambda_pt()) * load[0] +
-              *(i_pt()) * fluid_load[0] * (1.0 - *(lambda_pt()));
-    load[1] = *(lambda_pt()) * load[1] +
-              *(i_pt()) * fluid_load[1] * (1.0 - *(lambda_pt()));
+    compute_slender_body_traction_on_beam_in_reference_configuration(s, load);
+    load[0] = *(i_pt()) * load[0];
+    load[1] = *(i_pt()) * load[1];
   }
 
 
@@ -1126,7 +830,6 @@ public:
     }
   }
 
-
 private:
   /// Pointer to element that controls the rigid body motion
   RigidBodyElement* Rigid_body_element_pt;
@@ -1134,15 +837,9 @@ private:
   /// Pointer to non-dimensional coefficient (FSI)
   double* I_pt;
 
-  /// Pointer to weight between the fluid and pre-solid tractions
-  double* Lambda_pt;
-
   /// Pointer to initial rotation of the element when it's in its (otherwise)
   /// undeformed configuration
   const double* Theta_initial_pt;
-
-  /// Pointer to 2nd Piola Kirchhoff pre-stress
-  double* Sigma0_pt;
 };
 
 
@@ -1292,7 +989,7 @@ class ElasticBeamProblem : public Problem
 public:
   /// Constructor: The arguments are the number of elements and the parameter to
   /// determine the length of the beam
-  ElasticBeamProblem(const unsigned& n_elem1, const double& L);
+  ElasticBeamProblem(const unsigned& n_elem1, const unsigned& n_elem2);
 
   /// Conduct a parameter study
   void parameter_study();
@@ -1341,8 +1038,11 @@ private:
   /// Pointer to RigidBodyElement that actually contains the rigid body data
   RigidBodyElement* Rigid_body_element_pt;
 
-  /// Pointer to beam mesh
-  OneDLagrangianMesh<BeamPointLoadElement<HaoHermiteBeamElement>>* mesh_pt;
+  /// Pointer to beam mesh (first arm)
+  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_first_arm_pt;
+
+  /// Pointer to beam mesh (second arm)
+  OneDLagrangianMesh<HaoHermiteBeamElement>* Beam_mesh_second_arm_pt;
 
   /// Pointer to mesh containing the rigid body element
   Mesh* Rigid_body_element_mesh_pt;
@@ -1433,8 +1133,8 @@ public:
 //=============start_of_constructor=====================================
 /// Constructor for elastic beam problem
 //======================================================================
-ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
-                                       const double& length)
+ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
+                                       const unsigned& n_elem2)
 {
   // Drift speed and acceleration of horizontal motion
   double v = 0.0;
@@ -1463,74 +1163,53 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
   // before applying the rigid body motion)
   Undef_beam_pt = new StraightLineVertical();
 
+  // Aspect ratio to determine the length of the beam
+  // first arm length = |q+0.5|, second arm length = |q-0.5|
+  double* q_pt = &Global_Physical_Variables::Q;
+
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
-  // nodes.
-  mesh_pt = new OneDLagrangianMesh<BeamPointLoadElement<HaoHermiteBeamElement>>(
-    n_elem, length, Undef_beam_pt);
+  // nodes. (first arm)
+  double length_1 = fabs(*q_pt + 0.5);
+  Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+    n_elem1, length_1, Undef_beam_pt);
+
+  // Create the (Lagrangian!) mesh, using the StraightLineVertical object
+  // Undef_beam_pt to specify the initial (Eulerian) position of the
+  // nodes. (second arm)
+  double length_2 = fabs(*q_pt - 0.5);
+  Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
+    n_elem2, length_2, Undef_beam_pt);
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure
-  Vector<SolidMesh*> Beam_mesh_pt(1);
-  Beam_mesh_pt[0] = mesh_pt;
+  Vector<SolidMesh*> Beam_mesh_pt(2);
+  Beam_mesh_pt[0] = Beam_mesh_first_arm_pt;
+  Beam_mesh_pt[1] = Beam_mesh_second_arm_pt;
   Rigid_body_element_pt->set_pointer_to_beam_meshes(Beam_mesh_pt);
 
-
   // Build the problem's global mesh
-  add_sub_mesh(mesh_pt);
+  add_sub_mesh(Beam_mesh_first_arm_pt);
+  add_sub_mesh(Beam_mesh_second_arm_pt);
+  add_sub_mesh(Rigid_body_element_mesh_pt);
   build_global_mesh();
 
-  // Loop over nodes in mesh and assign values to positions and slopes
-  unsigned n_node = mesh_pt->nnode();
-  for (unsigned j = 0; j < n_node; j++)
-  {
-    // Get the lagrangian coordinate in this node
-    Vector<double> zeta(1);
-    zeta[0] = mesh_pt->node_pt(j)->xi(0);
-
-    // Position
-    mesh_pt->node_pt(j)->x_gen(0, 0) =
-      0.4297994268 * zeta[0] - 0.1150331792 * zeta[0] * zeta[0] + 1.0e-11;
-    mesh_pt->node_pt(j)->x_gen(0, 1) =
-      -0.5472779369 * zeta[0] + 0.4141194455 * zeta[0] * zeta[0];
-
-    // Slope
-    // Jacobian mapping the Lagrangian coordinate and local coordinate dxi/ds
-    double dxi_ds = mesh_pt->node_pt(j)->lagrangian_position_gen(1, 0);
-
-    // Assign values to slopes which are evaluated from the shape expression
-    mesh_pt->node_pt(j)->x_gen(1, 0) =
-      (0.4297994268 - 0.2300663584 * zeta[0]) * dxi_ds;
-    mesh_pt->node_pt(j)->x_gen(1, 1) =
-      (-0.5472779369 + 0.8282388910 * zeta[0]) * dxi_ds;
-  }
-
-
-  // Set the boundary conditions:
-  // Pin displacements and slopes in both x and y directions
-  // [Note: The mesh_pt() function has been overloaded
-  //  to return a pointer to the actual mesh, rather than
-  //  a pointer to the Mesh base class. The current mesh is derived
-  //  from the SolidMesh class. In such meshes, all access functions
-  //  to the nodes, such as boundary_node_pt(...), are overloaded
-  //  to return pointers to SolidNodes (whose position can be
-  //  pinned) rather than "normal" Nodes.]
-  mesh_pt->boundary_node_pt(0, 0)->pin_position(0);
-  mesh_pt->boundary_node_pt(0, 0)->pin_position(1);
-  mesh_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
-  mesh_pt->boundary_node_pt(0, 0)->pin_position(1, 1);
-
+  // Set the boundary conditions: One end of the beam is clamped in space
+  // Pin displacements in both x and y directions, and pin the derivative of
+  // position Vector w.r.t. to coordinates in x direction. (first arm)
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
+  Beam_mesh_first_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
 
   // Find number of elements in the mesh (first arm)
-  unsigned n_element = mesh_pt->nelement();
+  unsigned n_element = Beam_mesh_first_arm_pt->nelement();
 
   // Loop over the elements to set physical parameters etc. (first arm)
   for (unsigned e = 0; e < n_element; e++)
   {
     // Upcast to the specific element type
-    BeamPointLoadElement<HaoHermiteBeamElement>* elem_pt =
-      dynamic_cast<BeamPointLoadElement<HaoHermiteBeamElement>*>(
-        mesh_pt->element_pt(e));
+    HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
+      Beam_mesh_first_arm_pt->element_pt(e));
 
     // Pass the pointer of RigidBodyElement to the each element
     // so we can work out the rigid body motion
@@ -1539,29 +1218,47 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem,
     // Set physical parameters for each element:
     elem_pt->h_pt() = &Global_Physical_Variables::H;
     elem_pt->i_pt() = &Global_Physical_Variables::I;
-    elem_pt->lambda_pt() = &Global_Physical_Variables::Lambda;
-    elem_pt->sigma0_pt() = &Global_Physical_Variables::Sigma0;
 
-    // Set the load Vector for each element
-    elem_pt->load_vector_fct_pt() = &Global_Physical_Variables::load;
+    // Note: no rotation!
 
     // Set the undeformed shape for each element
     elem_pt->undeformed_beam_pt() = Undef_beam_pt;
 
   } // end of loop over elements
 
-  // Apply point load to end element
-  unsigned e_end = n_element - 1;
-  BeamPointLoadElement<HaoHermiteBeamElement>* end_elem_pt =
-    dynamic_cast<BeamPointLoadElement<HaoHermiteBeamElement>*>(
-      mesh_pt->element_pt(e_end));
 
-  // hierher rewrite to pointers!
-  end_elem_pt->setup(&Global_Physical_Variables::S_point_load,
-                     &Global_Physical_Variables::Point_load,
-                     &Global_Physical_Variables::Point_moment,
-                     &Global_Physical_Variables::Lambda);
+  // Set the boundary conditions: One end of the beam is clamped in space
+  // Pin displacements in both x and y directions, and pin the derivative of
+  // position Vector w.r.t. to coordinates in x direction. (second arm)
+  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(0);
+  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1);
+  Beam_mesh_second_arm_pt->boundary_node_pt(0, 0)->pin_position(1, 0);
 
+  // Find number of elements in the mesh (second arm)
+  n_element = Beam_mesh_second_arm_pt->nelement();
+
+  // Loop over the elements to set physical parameters etc. (second arm)
+  for (unsigned e = 0; e < n_element; e++)
+  {
+    // Upcast to the specific element type
+    HaoHermiteBeamElement* elem_pt = dynamic_cast<HaoHermiteBeamElement*>(
+      Beam_mesh_second_arm_pt->element_pt(e));
+
+    // Pass the pointer of RigidBodyElement to the each element
+    // so we can work out the rigid body motion
+    elem_pt->set_pointer_to_rigid_body_element(Rigid_body_element_pt);
+
+    // Set physical parameters for each element:
+    elem_pt->h_pt() = &Global_Physical_Variables::H;
+    elem_pt->i_pt() = &Global_Physical_Variables::I;
+
+    // Rotate by opening angle
+    elem_pt->theta_initial_pt(&Global_Physical_Variables::Alpha);
+
+    // Set the undeformed shape for each element
+    elem_pt->undeformed_beam_pt() = Undef_beam_pt;
+
+  } // end of loop over elements
 
   // Assign the global and local equation numbers
   cout << "# of dofs " << assign_eqn_numbers() << std::endl;
@@ -1576,10 +1273,10 @@ void ElasticBeamProblem::parameter_study()
 {
   // Over-ride the default maximum value for the residuals
   // Problem::Max_residuals = 1.0e10;
-  Problem::Max_newton_iterations = 100;
+  // Problem::Max_newton_iterations = 20;
   Problem::Always_take_one_newton_step = true;
-  // Problem::Scale_arc_length = false;
-  // Problem::Theta_squared = 0.2;
+  Problem::Scale_arc_length = false;
+  Problem::Theta_squared = 0.2;
 
   // Create label for output
   DocInfo doc_info;
@@ -1589,134 +1286,164 @@ void ElasticBeamProblem::parameter_study()
   doc_info.set_directory("RESLT");
 
   // Output file stream used for writing results
-  ofstream file1;
+  ofstream file;
 
   // String used for the filename
   char filename[100];
 
-  // In the beginning, the loading term of the beam equation is only the solid
-  // traction that causes the object to deform into an asymmetric U shape
-  Global_Physical_Variables::Lambda = 1.0;
-
-  // Document the initial guess for the "undeformed" U shape
-  sprintf(filename, "RESLT/U_shape_without_solve.dat");
-  file1.open(filename);
-  mesh_pt->output(file1, 5);
-  file1.close();
-
-  // Shape the U-shape and only establish the mesh for the solid beam
-  // Solve the system and get the U shape
-  newton_solve();
-
-  // Document the shape data of the "undeformed" U shape
-  sprintf(filename, "RESLT/U_shape.dat");
-  file1.open(filename);
-  mesh_pt->output(file1, 5);
-  file1.close();
-
-
-  //-------------------------------------------------------------------------
-  // Combine with the fluid mesh (adding additional 3 equilibrium equations)
-
-  // Get rid of the previous submeshes
-  // flush_sub_meshes();
-  // add_sub_mesh(mesh_pt);
-
-  // Add the fluid mesh
-  add_sub_mesh(Rigid_body_element_mesh_pt);
-
-  // rebuild the global_mesh containing solid beam mesh and fluid mesh
-  rebuild_global_mesh();
-
-  // Re-assign the global and local equation numbers
-  cout << "New # of dofs " << assign_eqn_numbers() << std::endl;
-
-  // Set the value to the FSI coefficient
-  Global_Physical_Variables::I = 0.001;
-
-  // Output file stream used for writing results
-  ofstream file;
-
   // Write the file name
   sprintf(filename,
-          "RESLT/elastic_beam_I_%.7f_initial_%.2f.dat",
-          Global_Physical_Variables::I,
+          "RESLT/elastic_beam_I_theta_q_%.3f_alpha_%.3fpi_initial_%.2f.dat",
+          Global_Physical_Variables::Q,
+          Global_Physical_Variables::Alpha / acos(-1.0),
           Global_Physical_Variables::Initial_value_for_theta_eq);
   file.open(filename);
 
-  // Set the label
+  // Counter to record the iterations for the while loop
   unsigned counter = 0;
 
-  // Make continuation for lambda from 1.0 to 0.0, so that the fluid traction
-  // takes over the loading term of the beam equation
-  for (unsigned i = 0; i <= 39; i++)
+  // Initialize the value of backup for dofs
+  DoubleVector dofs_backup;
+
+  // Loop over different values for Non-dimensional coefficient (FSI) I by
+  // using arclength increment
+  // The loop stops when I becomes negative since only positive values of I are
+  // considered.
+  double I_backup = 0.0;
+  double ds = 0.0;
+  while (Global_Physical_Variables::I >= 0.0)
   {
-    Global_Physical_Variables::Lambda = 1.0 - i * 1.0e-3;
+    // Get the dofs
+    Problem::get_dofs(dofs_backup);
 
-    // Document Lambda
-    file << Global_Physical_Variables::Lambda << "  ";
+    try
+    {
+      if (counter == 0)
+      {
+        // Solve the system
+        newton_solve();
+      }
+      else
+      {
+        // Backup the FSI coefficient I
+        I_backup = Global_Physical_Variables::I;
 
-    // Solve the system (solid and fluid meshes)
-    newton_solve();
+        // To prevent large solution jumps in critical intervals for I, try to
+        // reduce ds specifically in those areas for smoother and more precise
+        // results
 
-    // Document the solution of Theta_eq, Theta_eq_orientation
-    Rigid_body_element_pt->output(file);
+        // First I interval [Interval1_start,Interval1_end]
+        if (Global_Physical_Variables::Ds_default >
+              Global_Physical_Variables::Ds_interval1 &&
+            Global_Physical_Variables::I >=
+              Global_Physical_Variables::Interval1_start &&
+            Global_Physical_Variables::I <=
+              Global_Physical_Variables::Interval1_end)
+        {
+          ds = Global_Physical_Variables::Ds_interval1;
+        }
+        // Second I interval [Interval2_start,Interval2_end]
+        else if (Global_Physical_Variables::Ds_default >
+                   Global_Physical_Variables::Ds_interval2 &&
+                 Global_Physical_Variables::I >=
+                   Global_Physical_Variables::Interval2_start &&
+                 Global_Physical_Variables::I <=
+                   Global_Physical_Variables::Interval2_end)
+        {
+          ds = Global_Physical_Variables::Ds_interval2;
+        }
+        else
+        {
+          // Use the default one
+          ds = Global_Physical_Variables::Ds_default;
+        }
 
-    // Document maximum residuals at start and after each newton iteration
-    file << Problem::Max_res[0] << "  ";
+        /// Use the arclength solve
+        ds = arc_length_step_solve(&Global_Physical_Variables::I, ds);
+      }
 
-    // Document actual number of Newton iterations taken during the most
-    // recent iteration
-    file << Problem::Nnewton_iter_taken << "  ";
+      // Document I
+      file << Global_Physical_Variables::I << "  ";
 
-    // Step label
-    file << counter << std::endl;
+      // Document the solution of Theta_eq, Theta_eq_orientation
+      Rigid_body_element_pt->output(file);
 
-    // Document the shape data
-    sprintf(filename,
-            "RESLT/beam_initial_%.2f_%d.dat",
-            Global_Physical_Variables::Initial_value_for_theta_eq,
-            counter);
-    file1.open(filename);
-    mesh_pt->output(file1, 5);
-    file1.close();
+      // Document maximum residuals at start and after each newton iteration
+      file << Problem::Max_res[0] << "  ";
 
-    counter = counter + 1;
-  }
+      // Document actual number of Newton iterations taken during the most
+      // recent iteration
+      file << Problem::Nnewton_iter_taken << "  ";
 
-  for (unsigned i = 0; i <= 1000; i++)
-  {
-    Global_Physical_Variables::Lambda -= i * 1.0e-6;
+      // Step label
+      file << counter << std::endl;
 
-    // Document Lambda
-    file << Global_Physical_Variables::Lambda << "  ";
+      // Output file stream used for writing results
+      ofstream file1;
+      ofstream file2;
+      ofstream file3;
 
-    // Solve the system (solid and fluid meshes)
-    newton_solve();
+      // Document the solution (first arm)
+      sprintf(filename,
+              "RESLT/beam_first_arm_initial_%.2f_%d.dat",
+              Global_Physical_Variables::Initial_value_for_theta_eq,
+              counter);
+      file1.open(filename);
+      Beam_mesh_first_arm_pt->output(file1, 5);
+      file1.close();
 
-    // Document the solution of Theta_eq, Theta_eq_orientation
-    Rigid_body_element_pt->output(file);
+      // Document the solution (second arm)
+      sprintf(filename,
+              "RESLT/beam_second_arm_initial_%.2f_%d.dat",
+              Global_Physical_Variables::Initial_value_for_theta_eq,
+              counter);
+      file2.open(filename);
+      Beam_mesh_second_arm_pt->output(file2, 5);
+      file2.close();
 
-    // Document maximum residuals at start and after each newton iteration
-    file << Problem::Max_res[0] << "  ";
+      // Write restart file
+      sprintf(filename, "RESLT/restart%i.dat", counter);
+      file2.open(filename);
+      dump_it(file2);
+      file2.close();
 
-    // Document actual number of Newton iterations taken during the most
-    // recent iteration
-    file << Problem::Nnewton_iter_taken << "  ";
+      // Bump counter for output
+      counter = counter + 1;
+    }
+    catch (...)
+    {
+      // If the initial values are not appropriate, the newton method cannot
+      // converge at the starting point I=0.0
+      if (counter == 0)
+      {
+        oomph_info
+          << "Initial values for I=0.0 are not appropriate. Please modify them!"
+          << std::endl;
+        break;
+      }
+      else
+      {
+        // Check if default ds is small enough
+        if (Global_Physical_Variables::Ds_default < 1.0e-8)
+        {
+          // Since the default is not small enough, assign a smaller value
+          Global_Physical_Variables::Ds_default = 1.0e-8;
 
-    // Step label
-    file << counter << std::endl;
+          // Since the newton method cannot converge in this turn, overwrite the
+          // failed I value
+          Global_Physical_Variables::I = I_backup;
+        }
+        else
+        {
+          // If default ds is already small enough, it means there is no
+          // solution any more
+          break;
+        }
+      }
 
-    // Document the shape data
-    sprintf(filename,
-            "RESLT/beam_initial_%.2f_%d.dat",
-            Global_Physical_Variables::Initial_value_for_theta_eq,
-            counter);
-    file1.open(filename);
-    mesh_pt->output(file1, 5);
-    file1.close();
-
-    counter = counter + 1;
+      // Reset the dofs
+      Problem::set_dofs(dofs_backup);
+    }
   }
   file.close();
 
@@ -1730,6 +1457,15 @@ int main(int argc, char** argv)
 {
   // Store command line arguments
   CommandLineArgs::setup(argc, argv);
+
+  // Aspect ratio
+  CommandLineArgs::specify_command_line_flag("--q",
+                                             &Global_Physical_Variables::Q);
+
+  // Opening angle in degrees
+  double alpha_in_degrees = 45.0;
+  CommandLineArgs::specify_command_line_flag("--alpha_in_degrees",
+                                             &alpha_in_degrees);
 
   // Initial value for theta_eq in the Newton solve
   CommandLineArgs::specify_command_line_flag(
@@ -1773,28 +1509,24 @@ int main(int argc, char** argv)
   // Doc what has actually been specified on the command line
   CommandLineArgs::doc_specified_flags();
 
+  // Now that we've read the opening angle in degrees, update the value in
+  // radians
+  Global_Physical_Variables::Alpha = 4.0 * atan(1.0) / 180.0 * alpha_in_degrees;
 
   // Set the non-dimensional thickness
   Global_Physical_Variables::H = 0.01;
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
-  unsigned n_element = 20;
+  unsigned n_element1 = 20;
+  unsigned n_element2 = 20;
 
-  // Set the length of domain
-  double L = 3.736308338;
-
-  // Set the Lagrangian coordinate for the right end
-  double xi = L;
-
-  // Compute the point load
-  Global_Physical_Variables::setup_point_load(xi);
-
-  // Compute the point moment
-  Global_Physical_Variables::setup_point_moment(xi);
+  //  Aspect ratio to determine the length of the beam
+  //  first arm length = |q+0.5|, second arm length = |q-0.5|
+  // double q = 0.35;
 
   // Construct the problem
-  ElasticBeamProblem problem(n_element, L);
+  ElasticBeamProblem problem(n_element1, n_element2);
 
   // Do the restart?
   if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
