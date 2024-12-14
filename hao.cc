@@ -101,30 +101,33 @@ class RigidBodyElement : public GeneralisedElement
 {
 public:
   /// Constructor: Pass initial values for rigid body parameters (pinned
-  /// by default)
-  RigidBodyElement(const double& V,
-                   const double& U0,
+  /// by default) and time stepper pointer
+  RigidBodyElement(const double& X0,
+                   const double& Y0,
                    const double& Theta_eq,
-                   const double& X0,
-                   const double& Y0)
+                   TimeStepper*& time_stepper_pt)
+    : Time_stepper_pt(0)
   {
+    // Pass time stepper pointer
+    Time_stepper_pt = time_stepper_pt;
+
     // Create internal data which contains the "rigid body" parameters
-    for (unsigned i = 0; i < 5; i++)
+    for (unsigned i = 0; i < 3; i++)
     {
-      // Create data: One value, no timedependence, free by default
-      add_internal_data(new Data(1));
+      // Create data: One value, timedependence, free by default
+      add_internal_data(new Data(Time_stepper_pt, 1));
     }
 
-    // Give them a value:
-    internal_data_pt(0)->set_value(0, V);
-    internal_data_pt(1)->set_value(0, U0);
-    internal_data_pt(2)->set_value(0, Theta_eq);
+    // Give initial values t=0
+    internal_data_pt(0)->set_value(0, 0, X0);
+    internal_data_pt(1)->set_value(0, 0, Y0);
+    internal_data_pt(2)->set_value(0, 0, Theta_eq);
 
-    // These are just initial values so pin
+    /* // These are just initial values so pin
     internal_data_pt(3)->set_value(0, X0);
     internal_data_pt(3)->pin(0);
     internal_data_pt(4)->set_value(0, Y0);
-    internal_data_pt(4)->pin(0);
+    internal_data_pt(4)->pin(0); */
   }
 
 
@@ -132,8 +135,8 @@ public:
   /// parameters
   Vector<Data*> rigid_body_parameters()
   {
-    Vector<Data*> tmp_pt(5);
-    for (unsigned i = 0; i < 5; i++)
+    Vector<Data*> tmp_pt(3);
+    for (unsigned i = 0; i < 3; i++)
     {
       tmp_pt[i] = internal_data_pt(i);
     }
@@ -143,14 +146,11 @@ public:
 
   /// Helper function to compute the meaningful parameter values
   /// from enumerated data
-  void get_parameters(
-    double& V, double& U0, double& Theta_eq, double& X0, double& Y0)
+  void get_parameters(double& X0, double& Y0, double& Theta_eq)
   {
-    V = internal_data_pt(0)->value(0);
-    U0 = internal_data_pt(1)->value(0);
+    X0 = internal_data_pt(0)->value(0);
+    Y0 = internal_data_pt(1)->value(0);
     Theta_eq = internal_data_pt(2)->value(0);
-    X0 = internal_data_pt(3)->value(0);
-    Y0 = internal_data_pt(4)->value(0);
   }
 
 
@@ -198,7 +198,7 @@ public:
 
     // Output Theta_eq
     double Theta_eq = internal_data_pt(2)->value(0);
-    outfile << fmod(Theta_eq, 2 * acos(-1.0)) << "  ";
+    outfile << fmod(Theta_eq, 2.0 * acos(-1.0)) << "  ";
 
     // Make a transformation from Theta_eq to Theta_eq_orientation
     // Note that here Theta_eq_orientation is controlled in the range of
@@ -211,11 +211,11 @@ public:
     {
       if (Theta_eq_orientation > 0)
       {
-        outfile << Theta_eq_orientation - 2 * acos(-1.0) << "  ";
+        outfile << Theta_eq_orientation - 2.0 * acos(-1.0) << "  ";
       }
       else
       {
-        outfile << Theta_eq_orientation + 2 * acos(-1.0) << "  ";
+        outfile << Theta_eq_orientation + 2.0 * acos(-1.0) << "  ";
       }
     }
     else
@@ -240,6 +240,9 @@ protected:
     double sum_total_torque = 0.0;
     compute_drag_and_torque(sum_total_drag, sum_total_torque);
 
+    // current time
+    double time = Time_stepper_pt->time();
+
     unsigned n_internal = ninternal_data();
     for (unsigned i = 0; i < n_internal; i++)
     {
@@ -254,23 +257,23 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          residuals[eqn_number] = sum_total_drag[0];
-          // internal_data_pt(i)->value(j)-
-          // Global_Physical_Variables::V;
+          // residuals[eqn_number] = sum_total_drag[0];
+          // residuals[eqn_number] = internal_data_pt(i)->value(j) - time;
+          residuals[eqn_number] = internal_data_pt(i)->value(j) - time;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          residuals[eqn_number] = sum_total_drag[1];
-          // internal_data_pt(i)->value(j)-
-          // Global_Physical_Variables::U0;
+          // residuals[eqn_number] = sum_total_drag[1];
+          // residuals[eqn_number] = internal_data_pt(i)->value(j) - sin(time);
+          residuals[eqn_number] = internal_data_pt(i)->value(j) - time * time;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          residuals[eqn_number] = sum_total_torque;
-          // internal_data_pt(i)->value(j)-
-          // Global_Physical_Variables::Theta_eq;
+          // residuals[eqn_number] = sum_total_torque;
+          residuals[eqn_number] =
+            internal_data_pt(i)->value(j) - time * atan(1.0);
         }
         else
         {
@@ -290,6 +293,9 @@ protected:
 private:
   /// Pointer to the Mesh of HaoHermiteBeamElements
   Vector<SolidMesh*> Beam_mesh_pt;
+
+  /// Time stepper pointer
+  TimeStepper* Time_stepper_pt;
 };
 
 
@@ -323,14 +329,14 @@ public:
       Rigid_body_element_pt->rigid_body_parameters();
 
 #ifdef PARANOID
-    if (rigid_body_data_pt.size() != 5)
+    if (rigid_body_data_pt.size() != 3)
     {
       std::ostringstream error_message;
-      error_message << "rigid_body_data_pt should have size 5, not "
+      error_message << "rigid_body_data_pt should have size 3, not "
                     << rigid_body_data_pt.size() << std::endl;
 
       // loop over all entries
-      for (unsigned i = 0; i < 5; i++)
+      for (unsigned i = 0; i < 3; i++)
       {
         if (rigid_body_data_pt[i]->nvalue() != 1)
         {
@@ -346,7 +352,7 @@ public:
 #endif
 
     // Add the rigid body parameters as the external data for this element
-    for (unsigned i = 0; i < 5; i++)
+    for (unsigned i = 0; i < 3; i++)
     {
       add_external_data(rigid_body_data_pt[i]);
     }
@@ -431,18 +437,10 @@ public:
       double W = w * J;
 
       // Translate rigid body parameters into meaningful variables
-      // (Type=0: first arm, Type=1: second arm.)
-      double V = 0.0;
-      double U0 = 0.0;
-      double Theta_eq = 0.0;
       double X0 = 0.0;
       double Y0 = 0.0;
-      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-
-      // Note that we're looking for an pseudo "equilibrium position"
-      // where the angle (and the traction!) remain constant while
-      // the beam still moves as a rigid body!
-      double t = 0.0;
+      double Theta_eq = 0.0;
+      Rigid_body_element_pt->get_parameters(X0, Y0, Theta_eq);
 
 
       // hierher use Theta_initial everywhere whenever you're processing
@@ -452,10 +450,9 @@ public:
       // shape of the deformed body in the fluid
       Vector<double> R(2);
       R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
-             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
-             U0 * t + X0;
+             sin(Theta_eq + theta_initial()) * R_0[1] + X0;
       R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
-             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
+             cos(Theta_eq + theta_initial()) * R_0[1] + Y0;
 
       // Add 'em.
       length += W;
@@ -490,26 +487,18 @@ public:
     get_normal(s, R_0, N_0);
 
     // Translate rigid body parameters into meaningful variables
-    // (Type=0: first arm, Type=1: second arm.)
-    double V = 0.0;
-    double U0 = 0.0;
-    double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+    double Theta_eq = 0.0;
+    Rigid_body_element_pt->get_parameters(X0, Y0, Theta_eq);
 
-    // Note that we're looking for an pseudo "equilibrium position"
-    // where the angle (and the traction!) remain constant while
-    // the beam still moves as a rigid body!
-    double t = 0.0;
 
     // Compute R which is after translation and rotation
     Vector<double> R(2);
     R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
-           sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t + U0 * t +
-           X0;
+           sin(Theta_eq + theta_initial()) * R_0[1] + X0;
     R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
-           cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
+           cos(Theta_eq + theta_initial()) * R_0[1] + Y0;
 
     // Compute normal N which is after translation and rotation
     Vector<double> N(2);
@@ -519,11 +508,9 @@ public:
            cos(Theta_eq + theta_initial()) * N_0[1];
 
     // Compute the traction onto the element at local coordinate s
-    traction[0] = 0.5 * (V * t - R[1] + U0) * N[1] * N[1] -
-                  0.5 * N[1] * N[0] * V - V * t - U0 + R[1];
+    traction[0] = 1.0;
 
-    traction[1] =
-      0.5 * V * N[0] * N[0] - 0.5 * N[1] * (V * t - R[1] + U0) * N[0] - V;
+    traction[1] = 1.0;
   }
 
 
@@ -545,12 +532,10 @@ public:
 #endif
 
     // Translate rigid body parameters into meaningful variables
-    double V = 0.0;
-    double U0 = 0.0;
-    double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
+    double Theta_eq = 0.0;
+    Rigid_body_element_pt->get_parameters(X0, Y0, Theta_eq);
 
     // Compute the slender body traction acting on the actual beam onto the
     // element at local coordinate s
@@ -619,18 +604,10 @@ public:
     const unsigned n_intpt = integral_pt()->nweight();
 
     // Translate rigid body parameters into meaningful variables
-    // (Type=0: first arm, Type=1: second arm.)
-    double V = 0.0;
-    double U0 = 0.0;
-    double Theta_eq = 0.0;
     double X0 = 0.0;
     double Y0 = 0.0;
-    Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-
-    // Note that we're looking for an pseudo "equilibrium position"
-    // where the angle (and the traction!) remain constant while
-    // the beam still moves as a rigid body!
-    double t = 0.0;
+    double Theta_eq = 0.0;
+    Rigid_body_element_pt->get_parameters(X0, Y0, Theta_eq);
 
     // Loop over the integration points
     for (unsigned ipt = 0; ipt < n_intpt; ipt++)
@@ -666,10 +643,9 @@ public:
       // Compute R (after translation and rotation)
       Vector<double> R(2);
       R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
-             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
-             U0 * t + X0;
+             sin(Theta_eq + theta_initial()) * R_0[1] + X0;
       R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
-             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
+             cos(Theta_eq + theta_initial()) * R_0[1] + Y0;
 
       // calculate the contribution to torque
       double local_torque = (R[0] - sum_r_centre[0]) * traction[1] -
@@ -764,25 +740,17 @@ public:
         s, traction_0);
 
       // Translate rigid body parameters into meaningful variables
-      double V = 0.0;
-      double U0 = 0.0;
-      double Theta_eq = 0.0;
       double X0 = 0.0;
       double Y0 = 0.0;
-      Rigid_body_element_pt->get_parameters(V, U0, Theta_eq, X0, Y0);
-
-      // Note that we're looking for an pseudo "equilibrium position"
-      // where the angle (and the traction!) remain constant while
-      // the beam still moves as a rigid body!
-      double t = 0.0;
+      double Theta_eq = 0.0;
+      Rigid_body_element_pt->get_parameters(X0, Y0, Theta_eq);
 
       // Compute R after translation and rotation
       Vector<double> R(n_dim);
       R[0] = cos(Theta_eq + theta_initial()) * R_0[0] -
-             sin(Theta_eq + theta_initial()) * R_0[1] + 0.5 * V * t * t +
-             U0 * t + X0;
+             sin(Theta_eq + theta_initial()) * R_0[1] + X0;
       R[1] = sin(Theta_eq + theta_initial()) * R_0[0] +
-             cos(Theta_eq + theta_initial()) * R_0[1] + V * t + Y0;
+             cos(Theta_eq + theta_initial()) * R_0[1] + Y0;
 
       // Compute normal N after translation and rotation
       Vector<double> N(n_dim);
@@ -995,13 +963,27 @@ public:
   ElasticBeamProblem(const unsigned& n_elem1, const unsigned& n_elem2);
 
   /// Conduct a parameter study
-  void parameter_study();
+  // void parameter_study();
 
   /// No actions need to be performed after a solve
   void actions_after_newton_solve() {}
 
   /// No actions need to be performed before a solve
   void actions_before_newton_solve() {}
+
+  /// Update the problem specs after solve (empty)
+  void actions_after_implicit_timestep() {}
+
+  /// Update the problem specs before next timestep:
+  /// Set Dirchlet boundary conditions from exact solution.
+  void actions_before_implicit_timestep() {}
+
+  /// Set initial condition (incl previous timesteps) according
+  /// to specified function.
+  void set_initial_condition();
+
+  /// Doc the solution
+  void doc_solution(DocInfo& doc_info, ofstream& trace_file);
 
   /// Dump problem data to allow for later restart
   void dump_it(ofstream& dump_file)
@@ -1223,14 +1205,10 @@ private:
 ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
                                        const unsigned& n_elem2)
 {
-  // Drift speed and acceleration of horizontal motion
-  double v = 0.0;
-
-  // Speed of horizontal motion
-  double u0 = 0.0;
-
-  // Beam's inclination
-  double theta_eq = Global_Physical_Variables::Initial_value_for_theta_eq;
+  // Allocate the timestepper -- this constructs the Problem's
+  // time object with a sufficient amount of storage to store the
+  // previous timsteps.
+  add_time_stepper_pt(new BDF<1>);
 
   // x position of clamped point
   double x0 = 0.0;
@@ -1238,9 +1216,13 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
   // y position of clamped point
   double y0 = 0.0;
 
+  // Beam's inclination
+  double theta_eq = Global_Physical_Variables::Initial_value_for_theta_eq;
+
   // Make the RigidBodyElement that stores the parameters for the rigid body
   // motion
-  Rigid_body_element_pt = new RigidBodyElement(v, u0, theta_eq, x0, y0);
+  Rigid_body_element_pt =
+    new RigidBodyElement(x0, y0, theta_eq, time_stepper_pt());
 
   // Add the rigid body element to its own mesh
   Rigid_body_element_mesh_pt = new Mesh;
@@ -1266,7 +1248,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
   // double length_1 = fabs(*q_pt + 0.5);
   double length_1 = 1.0;
   Beam_mesh_first_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem1, length_1, Undef_beam_pt1);
+    n_elem1, length_1, Undef_beam_pt1, time_stepper_pt());
 
   // Create the (Lagrangian!) mesh, using the StraightLineVertical object
   // Undef_beam_pt to specify the initial (Eulerian) position of the
@@ -1274,7 +1256,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
   // double length_2 = fabs(*q_pt - 0.5);
   double length_2 = 1.0;
   Beam_mesh_second_arm_pt = new OneDLagrangianMesh<HaoHermiteBeamElement>(
-    n_elem2, length_2, Undef_beam_pt2);
+    n_elem2, length_2, Undef_beam_pt2, time_stepper_pt());
 
   // Pass the pointer of the mesh to the RigidBodyElement class
   // so it can work out the drag and torque on the entire structure
@@ -1360,8 +1342,61 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
 
 } // end of constructor
 
+//=====start_of_set_ic=====================================================
+/// Setup initial conditions -- either restart from solution
+/// specified via command line or impulsive start.
+//=========================================================================
+void ElasticBeamProblem::set_initial_condition()
+{
+  // Assign impulsive start
+  assign_initial_values_impulsive();
+}
 
-//=======start_of_parameter_study==========================================
+
+//=======start_of_doc_solution============================================
+/// Doc the solution
+//========================================================================
+void ElasticBeamProblem::doc_solution(DocInfo& doc_info, ofstream& trace_file)
+{
+  ofstream some_file1;
+  char filename[100];
+
+  // Number of plot points
+  unsigned npts;
+  npts = 5;
+
+
+  cout << std::endl;
+  cout << "=================================================" << std::endl;
+  cout << "Docing solution for t=" << time_pt()->time() << std::endl;
+  cout << "=================================================" << std::endl;
+
+
+  // Output solution
+  //-----------------
+  sprintf(filename,
+          "%s/soln_first_arm_%i.dat",
+          doc_info.directory().c_str(),
+          doc_info.number());
+  some_file1.open(filename);
+  Beam_mesh_first_arm_pt->output(some_file1, npts);
+  some_file1.close();
+
+  ofstream some_file2;
+  sprintf(filename,
+          "%s/soln_second_arm_%i.dat",
+          doc_info.directory().c_str(),
+          doc_info.number());
+  some_file2.open(filename);
+  Beam_mesh_second_arm_pt->output(some_file2, npts);
+  some_file2.close();
+
+  trace_file << time_pt()->time() << std::endl;
+
+} // end of doc_solution
+
+
+/* //=======start_of_parameter_study==========================================
 /// Solver loop to perform parameter study
 //=========================================================================
 void ElasticBeamProblem::parameter_study()
@@ -1569,7 +1604,7 @@ void ElasticBeamProblem::parameter_study()
   file.close();
 
 
-} // end of parameter study
+} // end of parameter study */
 
 //========start_of_main================================================
 /// Driver for beam (string under tension) test problem
@@ -1643,15 +1678,66 @@ int main(int argc, char** argv)
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
-  unsigned n_element1 = 20;
-  unsigned n_element2 = 20;
+  unsigned n_element1 = 2;
+  unsigned n_element2 = 2;
 
-  //  Aspect ratio to determine the length of the beam
-  //  first arm length = |q+0.5|, second arm length = |q-0.5|
-  // double q = 0.35;
+  Global_Physical_Variables::I = 0.0;
 
   // Construct the problem
   ElasticBeamProblem problem(n_element1, n_element2);
+
+  // Setup labels for output
+  DocInfo doc_info;
+
+  // Output directory
+  doc_info.set_directory("RESLT");
+
+  // Output number
+  doc_info.number() = 0;
+
+  // Open a trace file
+  ofstream trace_file;
+  char filename[100];
+  sprintf(filename, "%s/trace.dat", doc_info.directory().c_str());
+  trace_file.open(filename);
+
+  // Choose simulation interval and timestep
+  double t_max = 50.0;
+  double dt = 1.0;
+
+  // Initialise timestep -- also sets the weights for all timesteppers
+  // in the problem.
+  problem.initialise_dt(dt);
+
+  // Set IC
+  problem.set_initial_condition();
+
+  // Output initial condition
+  problem.doc_solution(doc_info, trace_file);
+
+  // Increment counter for solutions
+  doc_info.number()++;
+
+  // Find number of steps
+  unsigned nstep = unsigned(t_max / dt);
+
+  // Timestepping loop
+  for (unsigned istep = 0; istep < nstep; istep++)
+  {
+    cout << " Timestep " << istep << std::endl;
+
+    // Take timestep
+    problem.unsteady_newton_solve(dt);
+
+    // Output solution
+    problem.doc_solution(doc_info, trace_file);
+
+    // Increment counter for solutions
+    doc_info.number()++;
+  }
+
+  // Close trace file
+  trace_file.close();
 
   // Do the restart?
   if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
@@ -1664,6 +1750,6 @@ int main(int argc, char** argv)
   }
 
   // Conduct parameter study
-  problem.parameter_study();
+  // problem.parameter_study();
 
 } // end of main
