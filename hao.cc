@@ -56,10 +56,10 @@ namespace Global_Physical_Variables
   // double Q = 0.4;
 
   // Define the length of the beam in the GeomObejct
-  double Stretch_ratio = 1.0;
+  double Stretch_ratio = 0.4;
 
   /// Initial value for theta_eq in the Newton solve
-  double Initial_value_for_theta_eq = 0.0;
+  double Initial_value_for_theta_eq = -1.57;
 
   /// Default value for desired ds
   double Ds_default = 1.0e-5;
@@ -154,6 +154,18 @@ public:
   }
 
 
+  /// Helper function to compute the first time derivative of the meaningful
+  /// parameter values
+  void get_first_time_derivative_of_parameters(double& dX0_dt,
+                                               double& dY0_dt,
+                                               double& dTheta_eq_dt)
+  {
+    dX0_dt = Time_stepper_pt->time_derivative(1, internal_data_pt(0), 0);
+    dY0_dt = Time_stepper_pt->time_derivative(1, internal_data_pt(1), 0);
+    dTheta_eq_dt = Time_stepper_pt->time_derivative(1, internal_data_pt(2), 0);
+  }
+
+
   /// Pass pointer to the Mesh of HaoHermiteBeamElements
   /// and add their unknowns to be external data for this element
   void set_pointer_to_beam_meshes(const Vector<SolidMesh*>& beam_mesh_pt)
@@ -223,6 +235,12 @@ public:
       outfile << Theta_eq_orientation << "  ";
     }
 
+    // Output X0,Y0
+    double X0 = internal_data_pt(0)->value(0);
+    double Y0 = internal_data_pt(1)->value(0);
+    outfile << X0 << "  ";
+    outfile << Y0 << "  ";
+
     // Output drag and torque on the entire beam structure
     outfile << sum_total_drag[0] << "  ";
     outfile << sum_total_drag[1] << "  ";
@@ -241,7 +259,7 @@ protected:
     compute_drag_and_torque(sum_total_drag, sum_total_torque);
 
     // current time
-    double time = Time_stepper_pt->time();
+    // double time = Time_stepper_pt->time();
 
     unsigned n_internal = ninternal_data();
     for (unsigned i = 0; i < n_internal; i++)
@@ -257,23 +275,24 @@ protected:
         if (i == 0)
         {
           // Eqn for V:
-          // residuals[eqn_number] = sum_total_drag[0];
+          residuals[eqn_number] = sum_total_drag[0];
           // residuals[eqn_number] = internal_data_pt(i)->value(j) - time;
-          residuals[eqn_number] = internal_data_pt(i)->value(j) - time;
+          // residuals[eqn_number] = internal_data_pt(i)->value(j) - time;
         }
         else if (i == 1)
         {
           // Eqn for U0:
-          // residuals[eqn_number] = sum_total_drag[1];
+          residuals[eqn_number] = sum_total_drag[1];
           // residuals[eqn_number] = internal_data_pt(i)->value(j) - sin(time);
-          residuals[eqn_number] = internal_data_pt(i)->value(j) - time * time;
+          // residuals[eqn_number] = internal_data_pt(i)->value(j) - time *
+          // time;
         }
         else if (i == 2)
         {
           // Eqn for Theta_eq:
-          // residuals[eqn_number] = sum_total_torque;
-          residuals[eqn_number] =
-            internal_data_pt(i)->value(j) - time * atan(1.0);
+          residuals[eqn_number] = sum_total_torque;
+          // residuals[eqn_number] =
+          //  internal_data_pt(i)->value(j) - time * atan(1.0);
         }
         else
         {
@@ -507,10 +526,83 @@ public:
     N[1] = sin(Theta_eq + theta_initial()) * N_0[0] +
            cos(Theta_eq + theta_initial()) * N_0[1];
 
-    // Compute the traction onto the element at local coordinate s
-    traction[0] = 1.0;
 
-    traction[1] = 1.0;
+    // Set the number of lagrangian coordinates
+    unsigned n_lagrangian = Undeformed_beam_pt->nlagrangian();
+
+    // Set the dimension of the global coordinates
+    unsigned n_dim = Undeformed_beam_pt->ndim();
+
+    // Find out how many nodes there are
+    unsigned n_node = nnode();
+
+    // Find out how many positional dofs there are
+    unsigned n_position_dofs = nnodal_position_type();
+
+    Vector<double> dR0_dt(n_dim);
+
+    // # of nodes, # of positional dofs
+    Shape psi(n_node, n_position_dofs);
+
+    // Get shape functions
+    shape(s, psi);
+
+    Vector<double> interpolated_xi(n_lagrangian);
+    interpolated_xi[0] = 0.0;
+
+    // Loop over coordinate directions/components of Vector
+    for (unsigned i = 0; i < n_dim; i++)
+    {
+      // Initialise time derivative of R_0
+      dR0_dt[i] = 0.0;
+    }
+
+
+    // Calculate spatial derivatives
+    for (unsigned l = 0; l < n_node; l++)
+    {
+      // Loop over positional dofs
+      for (unsigned k = 0; k < n_position_dofs; k++)
+      {
+        // Loop over Lagrangian coordinate directions [xi_gen[] are the
+        // the *gen*eralised Lagrangian coordinates: node, type, direction]
+        for (unsigned i = 0; i < n_lagrangian; i++)
+        {
+          interpolated_xi[i] +=
+            raw_lagrangian_position_gen(l, k, i) * psi(l, k);
+        }
+
+        // Loop over components of the deformed position Vector
+        for (unsigned i = 0; i < n_dim; i++)
+        {
+          dR0_dt[i] += raw_dnodal_position_gen_dt(1, l, k, i) * psi(l, k);
+        }
+      }
+    }
+
+    // Translate rigid body parameters into meaningful variables (first time
+    // derivative)
+    double dX0_dt = 0.0;
+    double dY0_dt = 0.0;
+    double dTheta_eq_dt = 0.0;
+    Rigid_body_element_pt->get_first_time_derivative_of_parameters(
+      dX0_dt, dY0_dt, dTheta_eq_dt);
+
+    // Particle velocity from kinematics
+    Vector<double> U(2);
+    U[0] = dX0_dt - dTheta_eq_dt * sin(Theta_eq) * R_0[0] +
+           cos(Theta_eq) * dR0_dt[0] - dTheta_eq_dt * cos(Theta_eq) * R_0[1] -
+           sin(Theta_eq) * dR0_dt[1];
+    U[1] = dY0_dt + dTheta_eq_dt * cos(Theta_eq) * R_0[0] +
+           sin(Theta_eq) * dR0_dt[0] - dTheta_eq_dt * sin(Theta_eq) * R_0[1] +
+           cos(Theta_eq) * dR0_dt[1];
+
+    // Compute the traction onto the element at local coordinate s
+    traction[0] =
+      (1.0 - 0.5 * N[1] * N[1]) * (R[1] - U[0]) - 0.5 * (N[1] * N[0] * U[1]);
+
+    traction[1] =
+      0.5 * N[1] * N[0] * (R[1] - U[0]) - (1.0 - 0.5 * N[0] * N[0]) * U[1];
   }
 
 
@@ -1391,6 +1483,8 @@ void ElasticBeamProblem::doc_solution(DocInfo& doc_info, ofstream& trace_file)
   Beam_mesh_second_arm_pt->output(some_file2, npts);
   some_file2.close();
 
+  trace_file << Global_Physical_Variables::I << "  ";
+  Rigid_body_element_pt->output(trace_file);
   trace_file << time_pt()->time() << std::endl;
 
 } // end of doc_solution
@@ -1678,10 +1772,10 @@ int main(int argc, char** argv)
 
   // Number of elements (choose an even number if you want the control point
   // to be located at the centre of the beam)
-  unsigned n_element1 = 2;
-  unsigned n_element2 = 2;
+  unsigned n_element1 = 20;
+  unsigned n_element2 = 20;
 
-  Global_Physical_Variables::I = 0.0;
+  Global_Physical_Variables::I = 0.0001;
 
   // Construct the problem
   ElasticBeamProblem problem(n_element1, n_element2);
@@ -1702,8 +1796,8 @@ int main(int argc, char** argv)
   trace_file.open(filename);
 
   // Choose simulation interval and timestep
-  double t_max = 50.0;
-  double dt = 1.0;
+  double t_max = 500.0;
+  double dt = 1;
 
   // Initialise timestep -- also sets the weights for all timesteppers
   // in the problem.
