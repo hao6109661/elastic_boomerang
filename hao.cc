@@ -59,7 +59,7 @@ namespace Global_Physical_Variables
   double Stretch_ratio = 0.4;
 
   /// Initial value for theta_eq in the Newton solve
-  double Initial_value_for_theta_eq = -1.57;
+  double Initial_value_for_theta_eq = 1.57;
 
   /// Default value for desired ds
   double Ds_default = 1.0e-5;
@@ -118,10 +118,10 @@ public:
       add_internal_data(new Data(Time_stepper_pt, 1));
     }
 
-    // Give initial values t=0
-    internal_data_pt(0)->set_value(0, 0, X0);
-    internal_data_pt(1)->set_value(0, 0, Y0);
-    internal_data_pt(2)->set_value(0, 0, Theta_eq);
+    // Assign these values as internal data with elements
+    internal_data_pt(0)->set_value(0, X0);
+    internal_data_pt(1)->set_value(0, Y0);
+    internal_data_pt(2)->set_value(0, Theta_eq);
 
     /* // These are just initial values so pin
     internal_data_pt(3)->set_value(0, X0);
@@ -1434,6 +1434,7 @@ ElasticBeamProblem::ElasticBeamProblem(const unsigned& n_elem1,
 
 } // end of constructor
 
+
 //=====start_of_set_ic=====================================================
 /// Setup initial conditions -- either restart from solution
 /// specified via command line or impulsive start.
@@ -1442,7 +1443,8 @@ void ElasticBeamProblem::set_initial_condition()
 {
   // Assign impulsive start
   assign_initial_values_impulsive();
-}
+
+} // end of set_initial_condition
 
 
 //=======start_of_doc_solution============================================
@@ -1486,6 +1488,16 @@ void ElasticBeamProblem::doc_solution(DocInfo& doc_info, ofstream& trace_file)
   trace_file << Global_Physical_Variables::I << "  ";
   Rigid_body_element_pt->output(trace_file);
   trace_file << time_pt()->time() << std::endl;
+
+  // Write restart file
+  ofstream some_file3;
+  sprintf(filename,
+          "%s/restart%i.dat",
+          doc_info.directory().c_str(),
+          doc_info.number());
+  some_file3.open(filename);
+  dump_it(some_file3);
+  some_file3.close();
 
 } // end of doc_solution
 
@@ -1775,7 +1787,7 @@ int main(int argc, char** argv)
   unsigned n_element1 = 20;
   unsigned n_element2 = 20;
 
-  Global_Physical_Variables::I = 0.0001;
+  Global_Physical_Variables::I = 0.005;
 
   // Construct the problem
   ElasticBeamProblem problem(n_element1, n_element2);
@@ -1796,15 +1808,27 @@ int main(int argc, char** argv)
   trace_file.open(filename);
 
   // Choose simulation interval and timestep
-  double t_max = 500.0;
-  double dt = 1;
+  double t_max = 200.0;
+  double dt = 0.1;
 
   // Initialise timestep -- also sets the weights for all timesteppers
   // in the problem.
   problem.initialise_dt(dt);
 
-  // Set IC
-  problem.set_initial_condition();
+  // Do the restart?
+  if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
+  {
+    // Open/read restart file
+    std::ifstream file2;
+    file2.open(restart_file.c_str());
+    problem.restart(file2);
+    file2.close();
+  }
+  else
+  {
+    // Set IC
+    problem.set_initial_condition();
+  }
 
   // Output initial condition
   problem.doc_solution(doc_info, trace_file);
@@ -1832,16 +1856,6 @@ int main(int argc, char** argv)
 
   // Close trace file
   trace_file.close();
-
-  // Do the restart?
-  if (CommandLineArgs::command_line_flag_has_been_set("--restart_file"))
-  {
-    // Open/read restart file
-    std::ifstream file2;
-    file2.open(restart_file.c_str());
-    problem.restart(file2);
-    file2.close();
-  }
 
   // Conduct parameter study
   // problem.parameter_study();
